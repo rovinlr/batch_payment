@@ -330,7 +330,7 @@ class BatchPaymentAvailableLine(models.TransientModel):
     payment_id = fields.Many2one("account.payment", string="Payment", required=True)
     move_id = fields.Many2one(related="payment_id.move_id", string="Journal Entry", readonly=True, store=False)
     journal_id = fields.Many2one(related="payment_id.journal_id", string="Journal", readonly=True, store=False)
-    payment_date = fields.Date(related="payment_id.payment_date", string="Payment Date", readonly=True, store=False)
+    payment_date = fields.Date(related="payment_id.date", string="Payment Date", readonly=True, store=False)
 
     # Currencies
     payment_currency_id = fields.Many2one(related="payment_id.currency_id", string="Payment Currency", readonly=True, store=False)
