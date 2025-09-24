@@ -24,6 +24,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         ("custom", "Custom Rate")
     ], default="company", required=True, string="FX Rate Source")
     custom_rate = fields.Float(string="Custom Rate (1 Company CCY -> Payment CCY)", digits=(16, 6))
+    min_residual = fields.Monetary(string="Min Residual (Payment CCY)", currency_field="payment_currency_id", default=0.0)
+    only_partial = fields.Boolean(string="Only Partial invoices")
     total_to_pay = fields.Monetary(string="Total to Pay", currency_field="payment_currency_id", compute="_compute_total_to_pay", store=False)
     line_ids = fields.One2many("batch.payment.allocation.wizard.line", "wizard_id", string="Invoices")
 
@@ -82,6 +84,32 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         if self.partner_type == "customer":
             return "inbound", "customer"
         return "outbound", "supplier"
+
+    def action_apply_filter(self):
+        self.ensure_one()
+        min_res = self.min_residual or 0.0
+        only_part = bool(self.only_partial)
+        to_remove = self.line_ids.filtered(lambda l: (l.residual_in_payment_currency or 0.0) < min_res or (only_part and l.move_payment_state != 'partial'))
+        if to_remove:
+            to_remove.unlink()
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'batch.payment.allocation.wizard',
+            'view_mode': 'form',
+            'res_id': self.id,
+            'target': 'new'
+        }
+
+    def action_reset_lines(self):
+        self.ensure_one()
+        self._load_invoices()
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'batch.payment.allocation.wizard',
+            'view_mode': 'form',
+            'res_id': self.id,
+            'target': 'new'
+        }
 
     def action_remove_selected_lines(self):
         self.ensure_one()
@@ -197,6 +225,7 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
     move_id = fields.Many2one("account.move", string="Invoice", required=True, domain="[('state','=','posted')]")
     name = fields.Char(string="Number", readonly=True)
     invoice_date = fields.Date(string="Invoice Date", readonly=True)
+    move_payment_state = fields.Selection(related="move_id.payment_state", string="Payment State", readonly=True, store=False)
     residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="currency_id", readonly=True)
     amount_to_pay = fields.Monetary(string="Amount to Pay", currency_field="currency_id")
     currency_id = fields.Many2one(related="wizard_id.payment_currency_id", string="Currency", store=False, readonly=True)
@@ -214,7 +243,7 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
     def action_delete_line(self):
         self.unlink()
 
-    @api.onchange("amount_to_pay")("amount_to_pay")
+    @api.onchange("amount_to_pay")
     def _onchange_amount_to_pay(self):
         for rec in self:
             if rec.amount_to_pay is None:
