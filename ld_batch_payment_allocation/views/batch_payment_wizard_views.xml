@@ -22,7 +22,7 @@
                         <field name="payment_currency_id"/>
 <field name="allocation_mode"/>
 <field name="rate_source"/>
-<field name="custom_rate" attrs="{'invisible': [('rate_source', '=', 'company')]}"/>
+<field name="custom_rate" invisible="rate_source == 'company'" invisible="rate_source == 'company'"/>
                         <field name="total_to_pay" readonly="1"/>
                         <field name="communication"/>
                     </group>
