@@ -128,8 +128,21 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             raise UserError(_("Please set a positive Amount to Pay for at least one invoice."))
 
         def _clamp_to_residual_paycur(line, amt_in_pay_currency):
-            residual_company = abs(line.move_id.amount_residual)
-            residual_paycur = line.move_id.company_currency_id._convert(residual_company, pay_currency, self.company_id, date)
+            # Compare the user-entered amount (in payment/journal currency) with the residual in that same currency.
+            rec_lines = line.move_id.line_ids.filtered(lambda l: l.account_id and l.account_id.account_type in ('asset_receivable','liability_payable'))
+            pay_currency = self._get_payment_currency()
+            company_currency = self.company_id.currency_id
+            invoice_currency = line.move_id.currency_id
+
+            # Compute residual in payment currency
+            if invoice_currency and invoice_currency == pay_currency:
+                # Perfect: use residual in invoice currency directly to avoid FX drift
+                residual_paycur = abs(sum(rec_lines.mapped('amount_residual_currency')))
+            else:
+                # Convert company residual to payment currency at the payment date
+                residual_company = abs(sum(rec_lines.mapped('amount_residual')))
+                residual_paycur = company_currency._convert(residual_company, pay_currency, self.company_id, date)
+
             amt_paycur = amt_in_pay_currency or 0.0
             if float_compare(amt_paycur, residual_paycur, precision_rounding=pay_currency.rounding) > 0:
                 amt_paycur = residual_paycur
