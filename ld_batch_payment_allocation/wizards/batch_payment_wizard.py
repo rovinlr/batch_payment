@@ -131,12 +131,11 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         if not chosen:
             raise UserError(_("Please set a positive Amount to Pay for at least one invoice."))
 
-        def _clamp_to_residual_paycur(line, amt_in_wizard_cur):
+        def _clamp_to_residual_paycur(line, amt_in_pay_currency):
+            # Compare the user-entered amount (already in payment/journal currency) with the residual converted to that currency.
             residual_company = abs(line.move_id.amount_residual)
             residual_paycur = line.move_id.company_currency_id._convert(residual_company, pay_currency, self.company_id, date)
-            amt_paycur = amt_in_wizard_cur
-            if self.payment_currency_id != pay_currency:
-                amt_paycur = self.payment_currency_id._convert(amt_in_wizard_cur, pay_currency, self.company_id, date)
+            amt_paycur = amt_in_pay_currency or 0.0
             if float_compare(amt_paycur, residual_paycur, precision_rounding=pay_currency.rounding) > 0:
                 amt_paycur = residual_paycur
             if float_compare(amt_paycur, 0.0, precision_rounding=pay_currency.rounding) < 0:
@@ -146,7 +145,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         if self.allocation_mode == "per_invoice":
             payment_ids = []
             for line in chosen:
-                amt_wizard_cur = line.amount_to_pay or 0.0
+                amt_wizard_cur = line.amount_to_pay or 0.0  # already in pay currency
                 amt_paycur, _res = _clamp_to_residual_paycur(line, amt_wizard_cur)
                 if float_compare(amt_paycur, 0.0, precision_rounding=pay_currency.rounding) <= 0:
                     continue
@@ -186,7 +185,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         # Grouped payment
         total_amount = 0.0
         for line in chosen:
-            amt_wizard_cur = line.amount_to_pay or 0.0
+            amt_wizard_cur = line.amount_to_pay or 0.0  # already in pay currency
             amt_paycur, _res = _clamp_to_residual_paycur(line, amt_wizard_cur)
             total_amount += amt_paycur
 
