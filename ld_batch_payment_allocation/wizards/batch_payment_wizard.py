@@ -294,6 +294,22 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
     invoice_date = fields.Date(string="Invoice Date", readonly=True)
     residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="currency_id", readonly=True)
     residual_in_company_currency = fields.Monetary(string="Residual (Company Currency)", currency_field="company_currency_id", readonly=True)
+amount_to_use = fields.Monetary(string="Amount to use", currency_field="payment_currency_id", help="Portion of this payment to apply.")
+
+@api.onchange('payment_id')
+def _onchange_payment_id(self):
+    for rec in self:
+        if rec.payment_id:
+            # Default to full residual in payment currency
+            rec.amount_to_use = rec.residual_in_payment_currency
+
+@api.constrains('amount_to_use')
+def _check_amount_to_use(self):
+    for rec in self:
+        if rec.amount_to_use and rec.amount_to_use < 0:
+            raise ValidationError(_("Amount to use must be >= 0."))
+        if rec.amount_to_use and rec.residual_in_payment_currency and rec.amount_to_use > rec.residual_in_payment_currency + rec.payment_currency_id.rounding:
+            raise ValidationError(_("Amount to use cannot exceed the payment residual."))
     residual_in_invoice_currency = fields.Monetary(string="Residual (Invoice Currency)", currency_field="invoice_currency_id", readonly=True)
     amount_to_pay = fields.Monetary(string="Amount to Pay", currency_field="currency_id")
     currency_id = fields.Many2one(related="wizard_id.payment_currency_id", string="Currency", store=False, readonly=True)
@@ -341,44 +357,76 @@ class BatchPaymentAvailableLine(models.TransientModel):
     # Residuals
     residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="payment_currency_id", readonly=True)
     residual_in_company_currency = fields.Monetary(string="Residual (Company Currency)", currency_field="company_currency_id", readonly=True)
+amount_to_use = fields.Monetary(string="Amount to use", currency_field="payment_currency_id", help="Portion of this payment to apply.")
+
+@api.onchange('payment_id')
+def _onchange_payment_id(self):
+    for rec in self:
+        if rec.payment_id:
+            # Default to full residual in payment currency
+            rec.amount_to_use = rec.residual_in_payment_currency
+
+@api.constrains('amount_to_use')
+def _check_amount_to_use(self):
+    for rec in self:
+        if rec.amount_to_use and rec.amount_to_use < 0:
+            raise ValidationError(_("Amount to use must be >= 0."))
+        if rec.amount_to_use and rec.residual_in_payment_currency and rec.amount_to_use > rec.residual_in_payment_currency + rec.payment_currency_id.rounding:
+            raise ValidationError(_("Amount to use cannot exceed the payment residual."))
 
 
 def action_apply_selected_payments(self):
     """Apply selected outstanding payments to the open invoices listed in this wizard.
-    MVP: asigna pagos completos/partiales automáticamente en orden FIFO hasta agotar.
+    Respects 'amount_to_use' per payment and performs partial reconciliations if needed.
     """
     self.ensure_one()
-    if not self.unreconciled_line_ids.filtered('select'):
-        raise UserError(_('Select at least one outstanding payment.'))
-    # Target invoice move lines (receivable/payable) with residual > 0
+    selected = self.unreconciled_line_ids.filtered(lambda l: l.select and l.payment_id and (l.amount_to_use or 0.0) > 0.0)
+    if not selected:
+        raise UserError(_('Select at least one outstanding payment and set an amount > 0.'))
+    # Prepare target invoice lines (receivable/payable with residual)
     in_types = ('out_invoice','out_refund') if self.partner_type == 'customer' else ('in_invoice','in_refund')
     invoice_lines = []
     for l in self.line_ids:
-        if not l.move_id or l.move_id.move_type not in in_types:
-            continue
-        aml = l.move_id.line_ids.filtered(lambda x: x.account_id and x.account_id.account_type in ('asset_receivable','liability_payable') and not x.reconciled)
-        if aml:
-            invoice_lines.append(aml[0])
+        if l.move_id and l.move_id.move_type in in_types:
+            aml = l.move_id.line_ids.filtered(lambda x: x.account_id and x.account_id.account_type in ('asset_receivable','liability_payable') and not x.reconciled)
+            if aml:
+                invoice_lines.append(aml[0])
     if not invoice_lines:
         raise UserError(_('There are no open invoice lines to reconcile.'))
-    # Iterate payments selected
-    for avail in self.unreconciled_line_ids.filtered('select'):
+
+    company_currency = self.company_id.currency_id
+
+    # Iterate payments
+    for avail in selected:
         pay = avail.payment_id
         pay_lines = pay.line_ids.filtered(lambda x: x.account_id and x.account_id.account_type in ('asset_receivable','liability_payable') and not x.reconciled and x.partner_id.id == self.partner_id.id)
         if not pay_lines:
             continue
         pay_line = pay_lines[0]
-        # Reconcile iteratively against invoices until payment is exhausted
+        # Amount available to use in company currency
+        pay_cur = pay.currency_id or company_currency
+        amount_to_use_paycur = min(avail.amount_to_use or 0.0, avail.residual_in_payment_currency or 0.0)
+        remaining_company = pay_cur._convert(amount_to_use_paycur, company_currency, self.company_id, pay.date or fields.Date.context_today(self))
+        if remaining_company <= 0:
+            continue
+        # Apply FIFO on invoices
         for inv_line in invoice_lines:
-            if pay_line.reconciled:
+            if remaining_company <= company_currency.rounding:
                 break
-            if inv_line.reconciled:
+            inv_residual_company = abs(inv_line.amount_residual)
+            if inv_residual_company <= 0:
                 continue
-            try:
-                (pay_line + inv_line).reconcile()
-            except Exception as e:
-                # If accounts differ, skip gracefully
-                continue
+            to_apply_company = min(remaining_company, inv_residual_company)
+            # Compute amount_currency if both share same currency
+            amt_pay_currency = None
+            amt_inv_currency = None
+            if pay_line.currency_id and inv_line.currency_id and pay_line.currency_id == inv_line.currency_id:
+                shared = pay_line.currency_id
+                amt_pay_currency = shared._convert(to_apply_company, shared, self.company_id, pay.date or fields.Date.context_today(self))
+                amt_inv_currency = amt_pay_currency
+            self._partial_reconcile_amount(pay_line, inv_line, to_apply_company, amt_pay_currency, amt_inv_currency)
+            remaining_company -= to_apply_company
+
     # Refresh lists
     self._load_invoices()
     self._load_unreconciled_payments()
@@ -389,3 +437,30 @@ def action_apply_selected_payments(self):
         'res_id': self.id,
         'target': 'new',
     }
+
+
+
+def _partial_reconcile_amount(self, pay_line, inv_line, amount_company, amount_pay_currency=None, amount_inv_currency=None):
+    """Create an account.partial.reconcile between a payment line and an invoice line
+    for a given amount in company currency. Optionally set amount_currency when both sides share a currency.
+    """
+    self.ensure_one()
+    if not amount_company or amount_company <= 0:
+        return False
+    # Identify debit/credit
+    debit_line = pay_line if pay_line.balance > 0 else inv_line if inv_line.balance > 0 else None
+    credit_line = pay_line if pay_line.balance < 0 else inv_line if inv_line.balance < 0 else None
+    if not debit_line or not credit_line:
+        return False
+    vals = {
+        'debit_move_id': debit_line.id,
+        'credit_move_id': credit_line.id,
+        'amount': amount_company,
+    }
+    # If both share same currency, include amount currency (positive numbers)
+    if pay_line.currency_id and inv_line.currency_id and pay_line.currency_id == inv_line.currency_id:
+        vals['currency_id'] = pay_line.currency_id.id
+        # amount_currency sign handled by ORM based on debit/credit side fields
+        vals['debit_amount_currency'] = amount_pay_currency if debit_line.id == pay_line.id else amount_inv_currency or amount_pay_currency
+        vals['credit_amount_currency'] = amount_pay_currency if credit_line.id == pay_line.id else amount_inv_currency or amount_pay_currency
+    return self.env['account.partial.reconcile'].create(vals)
