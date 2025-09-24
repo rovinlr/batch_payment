@@ -292,7 +292,7 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
     move_id = fields.Many2one("account.move", string="Invoice", required=True, domain="[('state','=','posted')]")
     name = fields.Char(string="Number", readonly=True)
     invoice_date = fields.Date(string="Invoice Date", readonly=True)
-    residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="currency_id", readonly=True)
+    residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="payment_currency_id", readonly=True)
     residual_in_company_currency = fields.Monetary(string="Residual (Company Currency)", currency_field="company_currency_id", readonly=True)
 amount_to_use = fields.Monetary(string="Amount to use", currency_field="payment_currency_id", help="Portion of this payment to apply.")
 
