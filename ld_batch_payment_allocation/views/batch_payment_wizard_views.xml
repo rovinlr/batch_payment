@@ -24,7 +24,14 @@
                     </group>
                 </group>
 
-                <separator string="Open Invoices"/>
+                <notebook>
+                    <page string="Open Invoices">
+                        <separator string="Open Invoices"/>
+                    </page>
+                    <page string="Unreconciled Payments">
+                        <separator string="Unreconciled Payments"/>
+                    </page>
+                </notebook>
                 <group col="4">
                     <field name="line_ids" nolabel="1" colspan="4">
                         <list editable="bottom">

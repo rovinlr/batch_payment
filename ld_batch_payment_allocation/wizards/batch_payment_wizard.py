@@ -26,6 +26,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                                    compute="_compute_total_to_pay", store=False)
     line_ids = fields.One2many("batch.payment.allocation.wizard.line", "wizard_id", string="Invoices")
 
+    unreconciled_line_ids = fields.One2many("batch.payment.available.line", "wizard_id", string="Outstanding Payments")
+
     # ---------- helpers ----------
     def _get_payment_currency(self):
         self.ensure_one()
@@ -47,24 +49,68 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                                                     date or self.payment_date or fields.Date.context_today(self))
 
     # ---------- onchange ----------
-    @api.onchange("journal_id")
+    @api.onchange(\"journal_id\")
     def _onchange_journal(self):
         for w in self:
             if not w.journal_id:
                 continue
             w.payment_currency_id = w.journal_id.currency_id or w.company_id.currency_id
-            methods = (w.journal_id.inbound_payment_method_line_ids if w.partner_type == "customer"
+            methods = (w.journal_id.inbound_payment_method_line_ids if w.partner_type == \"customer\"
                        else w.journal_id.outbound_payment_method_line_ids)
             if not w.payment_method_line_id or (w.payment_method_line_id.journal_id != w.journal_id):
                 w.payment_method_line_id = methods[:1].id if methods else False
             w._load_invoices()
+            w._load_unreconciled_payments()
 
-    @api.onchange("partner_type", "partner_id", "payment_date")
+    @api.onchange(\"partner_type\", \"partner_id\", \"payment_date\")
     def _onchange_partner(self):
         for w in self:
             w._load_invoices()
+            w._load_unreconciled_payments()
 
     # ---------- load invoices ----------
+    def _load_unreconciled_payments(self):
+        self.ensure_one()
+        self.unreconciled_line_ids = [(5, 0, 0)]
+        if not (self.partner_type and self.partner_id):
+            return
+        aml_domain = [
+            ("partner_id", "=", self.partner_id.id),
+            ("account_id.account_type", "in", ("asset_receivable", "liability_payable")),
+            ("reconciled", "=", False),
+            ("company_id", "=", self.company_id.id),
+            ("move_id.state", "=", "posted"),
+            ("payment_id", "!=", False),
+        ]
+        amls = self.env["account.move.line"].search(aml_domain)
+        if not amls:
+            return
+        by_payment = {}
+        for l in amls:
+            by_payment.setdefault(l.payment_id.id, []).append(l)
+        lines = []
+        pay_date = self.payment_date or fields.Date.context_today(self)
+        for pid, items in by_payment.items():
+            # Sum residuals from the payment's receivable/payable lines
+            residual_company = sum(abs(x.amount_residual) for x in items)
+            # Prefer residual in the line currency if set (common when payment currency != company)
+            residual_paycur = 0.0
+            any_currency = None
+            for x in items:
+                if x.currency_id:
+                    residual_paycur += abs(x.amount_residual_currency)
+                    any_currency = x.currency_id
+            if not any_currency:
+                # Convert from company currency to the payment's currency
+                pay_currency = items[0].payment_id.currency_id or self.company_id.currency_id
+                residual_paycur = self.company_id.currency_id._convert(residual_company, pay_currency, self.company_id, pay_date)
+            lines.append((0, 0, {
+                "payment_id": pid,
+                "residual_in_company_currency": residual_company,
+                "residual_in_payment_currency": residual_paycur,
+            }))
+        self.unreconciled_line_ids = lines
+
     def _load_invoices(self):
         self.ensure_one()
         self.line_ids = [(5, 0, 0)]
@@ -274,3 +320,22 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
                 continue
             if rec.amount_to_pay < 0:
                 rec.amount_to_pay = 0.0
+
+
+class BatchPaymentAvailableLine(models.TransientModel):
+    _name = "batch.payment.available.line"
+    _description = "Outstanding Payments (to reconcile)"
+
+    wizard_id = fields.Many2one("batch.payment.allocation.wizard", required=True, ondelete="cascade")
+    payment_id = fields.Many2one("account.payment", string="Payment", required=True)
+    move_id = fields.Many2one(related="payment_id.move_id", string="Journal Entry", readonly=True, store=False)
+    journal_id = fields.Many2one(related="payment_id.journal_id", string="Journal", readonly=True, store=False)
+    payment_date = fields.Date(related="payment_id.payment_date", string="Payment Date", readonly=True, store=False)
+
+    # Currencies
+    payment_currency_id = fields.Many2one(related="payment_id.currency_id", string="Payment Currency", readonly=True, store=False)
+    company_currency_id = fields.Many2one(related="wizard_id.company_id.currency_id", string="Company Currency", readonly=True, store=False)
+
+    # Residuals
+    residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="payment_currency_id", readonly=True)
+    residual_in_company_currency = fields.Monetary(string="Residual (Company Currency)", currency_field="company_currency_id", readonly=True)
