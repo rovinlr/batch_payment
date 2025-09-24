@@ -15,7 +15,7 @@
                         <field name="journal_id"/>
                         <field name="payment_method_line_id"/>
                         <field name="payment_date"/>
-                        <field name="payment_currency_id"/>
+                        <field name="payment_currency_id" readonly="1"/>
                         <field name="allocation_mode"/>
                         <field name="rate_source"/>
                         <field name="custom_rate" invisible="rate_source == 'company'"/>

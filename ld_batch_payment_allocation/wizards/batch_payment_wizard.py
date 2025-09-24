@@ -21,6 +21,21 @@ class BatchPaymentAllocationWizard(models.TransientModel):
     rate_source = fields.Selection([("company", "Company Rates (res.currency.rate)"), ("custom", "Custom Rate")],
                                    default="company", required=True, string="FX Rate Source")
     custom_rate = fields.Float(string="Custom Rate (1 Company CCY -> Payment CCY)", digits=(16, 6))
+    @api.onchange("journal_id")
+    def _onchange_journal(self):
+        for w in self:
+            if not w.journal_id:
+                continue
+            # Sync payment currency to journal currency or company currency
+            w.payment_currency_id = w.journal_id.currency_id or w.company_id.currency_id
+            # Pick a compatible payment method if missing or incompatible
+            methods = (w.journal_id.inbound_payment_method_line_ids if w.partner_type == "customer"
+                       else w.journal_id.outbound_payment_method_line_ids)
+            if not w.payment_method_line_id or (w.payment_method_line_id.journal_id != w.journal_id):
+                w.payment_method_line_id = methods[:1].id if methods else False
+            # Refresh lines (currency / amounts)
+            w._load_invoices()
+
 
     total_to_pay = fields.Monetary(string="Total to Pay", currency_field="payment_currency_id",
                                    compute="_compute_total_to_pay", store=False)
