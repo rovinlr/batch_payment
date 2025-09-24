@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from odoo import api, fields, models, _
 from odoo.exceptions import UserError, ValidationError
-from odoo.tools import float_compare
 
 class BatchPaymentAllocationWizard(models.TransientModel):
     _name = "batch.payment.allocation.wizard"
@@ -15,34 +14,25 @@ class BatchPaymentAllocationWizard(models.TransientModel):
     payment_date = fields.Date(default=fields.Date.context_today, required=True)
     payment_currency_id = fields.Many2one("res.currency", string="Payment Currency", required=True, default=lambda self: self.env.company.currency_id)
     communication = fields.Char(string="Memo / Reference")
-    allocation_mode = fields.Selection([
-        ("grouped", "One Grouped Payment"),
-        ("per_invoice", "One Payment per Invoice")
-    ], default="grouped", required=True, string="Allocation Mode")
-    rate_source = fields.Selection([
-        ("company", "Company Rates (e.g., BCCR via currency rates)"),
-        ("custom", "Custom Rate")
-    ], default="company", required=True, string="FX Rate Source")
+    allocation_mode = fields.Selection([("grouped", "One Grouped Payment"), ("per_invoice", "One Payment per Invoice")], default="grouped", required=True, string="Allocation Mode")
+    rate_source = fields.Selection([("company", "Company Rates (res.currency.rate)"), ("custom", "Custom Rate")], default="company", required=True, string="FX Rate Source")
     custom_rate = fields.Float(string="Custom Rate (1 Company CCY -> Payment CCY)", digits=(16, 6))
-    min_residual = fields.Monetary(string="Min Residual (Payment CCY)", currency_field="payment_currency_id", default=0.0)
-    only_partial = fields.Boolean(string="Only Partial invoices")
     total_to_pay = fields.Monetary(string="Total to Pay", currency_field="payment_currency_id", compute="_compute_total_to_pay", store=False)
     line_ids = fields.One2many("batch.payment.allocation.wizard.line", "wizard_id", string="Invoices")
-
-    @api.onchange("partner_type", "partner_id", "payment_currency_id")
-    def _onchange_partner(self):
-        for w in self:
-            w._load_invoices()
-
 
     def _convert_amount(self, amount_company_ccy, date):
         self.ensure_one()
         if not amount_company_ccy:
             return 0.0
-        # company currency to payment currency
         if self.rate_source == "custom" and self.custom_rate:
             return amount_company_ccy * self.custom_rate
+        # Use the company's currency conversion to the payment currency on the given date
         return self.env.company.currency_id._convert(amount_company_ccy, self.payment_currency_id, self.company_id, date or self.payment_date or fields.Date.context_today(self))
+
+    @api.onchange("partner_type", "partner_id", "payment_currency_id", "payment_date", "rate_source", "custom_rate")
+    def _onchange_partner(self):
+        for w in self:
+            w._load_invoices()
 
     def _load_invoices(self):
         self.ensure_one()
@@ -59,16 +49,14 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         ], order="invoice_date asc, name asc")
         lines = []
         for mv in moves:
-            residual_company = abs(mv.amount_residual)  # company currency
+            residual_company = abs(mv.amount_residual)
             if residual_company <= 0:
                 continue
-            # Convert residual to chosen payment currency
             residual_pay_cur = self._convert_amount(residual_company, self.payment_date)
             lines.append((0, 0, {
                 "move_id": mv.id,
                 "name": mv.name,
                 "invoice_date": mv.invoice_date,
-                
                 "residual_in_payment_currency": residual_pay_cur,
                 "amount_to_pay": residual_pay_cur,
             }))
@@ -79,49 +67,17 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         for w in self:
             w.total_to_pay = sum(w.line_ids.mapped("amount_to_pay"))
 
-    def _compute_payment_direction(self):
-        # Returns ('inbound'|'outbound', partner_type)
-        if self.partner_type == "customer":
-            return "inbound", "customer"
-        return "outbound", "supplier"
-
-    def action_apply_filter(self):
-        self.ensure_one()
-        min_res = self.min_residual or 0.0
-        only_part = bool(self.only_partial)
-        to_remove = self.line_ids.filtered(lambda l: (l.residual_in_payment_currency or 0.0) < min_res or (only_part and l.move_payment_state != 'partial'))
-        if to_remove:
-            to_remove.unlink()
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'batch.payment.allocation.wizard',
-            'view_mode': 'form',
-            'res_id': self.id,
-            'target': 'new'
-        }
-
-    def action_reset_lines(self):
-        self.ensure_one()
-        self._load_invoices()
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'batch.payment.allocation.wizard',
-            'view_mode': 'form',
-            'res_id': self.id,
-            'target': 'new'
-        }
-
     def action_remove_selected_lines(self):
         self.ensure_one()
         to_remove = self.line_ids.filtered(lambda l: l.to_delete)
         if to_remove:
             to_remove.unlink()
         return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'batch.payment.allocation.wizard',
-            'view_mode': 'form',
-            'res_id': self.id,
-            'target': 'new'
+            "type": "ir.actions.act_window",
+            "res_model": "batch.payment.allocation.wizard",
+            "view_mode": "form",
+            "res_id": self.id,
+            "target": "new"
         }
 
     def action_allocate(self):
@@ -144,7 +100,6 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             raise UserError(_("Please set a positive Amount to Pay for at least one invoice."))
 
         if self.allocation_mode == "per_invoice":
-            # Create one payment PER invoice, each with the requested amount
             payment_ids = []
             for line in chosen:
                 residual = line.residual_in_payment_currency or 0.0
@@ -153,7 +108,6 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                     amt = residual
                 if amt <= 0:
                     continue
-
                 reg = self.env["account.payment.register"].with_context(
                     active_model="account.move", active_ids=[line.move_id.id]
                 ).create({
@@ -167,10 +121,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 })
                 payments = reg._create_payments()
                 payment_ids += payments.ids
-
             if not payment_ids:
                 raise UserError(_("No payments were created. Check the amounts to pay."))
-
             return {
                 "type": "ir.actions.act_window",
                 "res_model": "account.payment",
@@ -179,8 +131,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 "name": _("Payments"),
             }
 
-        # Grouped: single payment for the sum; clamp each line to residual to avoid rounding issues
-        clamped_amounts = []
+        # Grouped: single payment for the sum; clamp amounts to residual to avoid rounding issues
+        total_amount = 0.0
         for line in chosen:
             residual = line.residual_in_payment_currency or 0.0
             amt = line.amount_to_pay or 0.0
@@ -188,9 +140,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 amt = residual
             if amt < 0:
                 amt = 0.0
-            clamped_amounts.append(amt)
+            total_amount += amt
 
-        total_amount = sum(clamped_amounts)
         if total_amount <= 0:
             raise UserError(_("Total amount to pay must be greater than zero."))
 
@@ -225,13 +176,11 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
     move_id = fields.Many2one("account.move", string="Invoice", required=True, domain="[('state','=','posted')]")
     name = fields.Char(string="Number", readonly=True)
     invoice_date = fields.Date(string="Invoice Date", readonly=True)
-    move_payment_state = fields.Selection(related="move_id.payment_state", string="Payment State", readonly=True, store=False)
     residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="currency_id", readonly=True)
     amount_to_pay = fields.Monetary(string="Amount to Pay", currency_field="currency_id")
     currency_id = fields.Many2one(related="wizard_id.payment_currency_id", string="Currency", store=False, readonly=True)
     to_delete = fields.Boolean(string="Delete?")
 
-    
     @api.constrains("amount_to_pay")
     def _check_amount(self):
         for rec in self:
@@ -239,9 +188,6 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
                 continue
             if rec.amount_to_pay < 0:
                 raise ValidationError(_("Amount to pay must be >= 0."))
-
-    def action_delete_line(self):
-        self.unlink()
 
     @api.onchange("amount_to_pay")
     def _onchange_amount_to_pay(self):
@@ -252,17 +198,11 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
             if rec.amount_to_pay > residual:
                 rec.amount_to_pay = residual
 
-        for rec in self:
-            if rec.amount_to_pay is None:
-                continue
-            if rec.amount_to_pay < 0:
-                raise ValidationError(_("Amount to pay must be >= 0."))
-            # Tolerance for rounding
-            if rec.residual_in_payment_currency is not None and (rec.amount_to_pay - rec.residual_in_payment_currency) > 1e-6:
-                raise ValidationError(_("Amount to pay cannot exceed the residual."))
-
     @api.onchange("move_id")
     def _onchange_move(self):
         for rec in self:
             rec.name = rec.move_id.name or ""
             rec.invoice_date = rec.move_id.invoice_date
+
+    def action_delete_line(self):
+        self.unlink()
