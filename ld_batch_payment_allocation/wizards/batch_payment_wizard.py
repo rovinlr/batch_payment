@@ -59,16 +59,20 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         ], order="invoice_date asc, name asc")
         lines = []
         for mv in moves:
-            residual_company = abs(mv.amount_residual)
-            if residual_company <= 0:
+            rec_lines = mv.line_ids.filtered(lambda l: l.account_internal_type in ('receivable','payable'))
+            residual_company = abs(sum(rec_lines.mapped('amount_residual')))
+            residual_invoice = abs(sum(rec_lines.mapped('amount_residual_currency'))) if mv.currency_id else residual_company
+            if residual_company <= 0 and residual_invoice <= 0:
                 continue
             residual_pay_cur = self._convert_amount(residual_company, self.payment_date)
             lines.append((0, 0, {
-                "move_id": mv.id,
-                "name": mv.name,
-                "invoice_date": mv.invoice_date,
-                "residual_in_payment_currency": residual_pay_cur,
-                "amount_to_pay": residual_pay_cur,
+                'move_id': mv.id,
+                'name': mv.name,
+                'invoice_date': mv.invoice_date,
+                'residual_in_payment_currency': residual_pay_cur,
+                'residual_in_company_currency': residual_company,
+                'residual_in_invoice_currency': residual_invoice,
+                'amount_to_pay': residual_pay_cur,
             }))
         self.line_ids = lines
 
@@ -220,6 +224,10 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
     residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="currency_id", readonly=True)
     amount_to_pay = fields.Monetary(string="Amount to Pay", currency_field="currency_id")
     currency_id = fields.Many2one(related="wizard_id.payment_currency_id", string="Currency", store=False, readonly=True)
+    company_currency_id = fields.Many2one(related="wizard_id.company_id.currency_id", string="Company Currency", store=False, readonly=True)
+    invoice_currency_id = fields.Many2one(related="move_id.currency_id", string="Invoice Currency", store=False, readonly=True)
+    residual_in_company_currency = fields.Monetary(string="Residual (Company Currency)", currency_field="company_currency_id", readonly=True)
+    residual_in_invoice_currency = fields.Monetary(string="Residual (Invoice Currency)", currency_field="invoice_currency_id", readonly=True)
     to_delete = fields.Boolean(string="Delete?")
 
     @api.constrains("amount_to_pay")
@@ -244,6 +252,14 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
         for rec in self:
             rec.name = rec.move_id.name or ""
             rec.invoice_date = rec.move_id.invoice_date
+            if rec.move_id:
+                rec_lines = rec.move_id.line_ids.filtered(lambda l: l.account_internal_type in ('receivable','payable'))
+                residual_company = abs(sum(rec_lines.mapped('amount_residual')))
+                residual_invoice = abs(sum(rec_lines.mapped('amount_residual_currency'))) if rec.move_id.currency_id else residual_company
+                rec.residual_in_company_currency = residual_company
+                rec.residual_in_invoice_currency = residual_invoice
+                # refresh payment-currency residual via wizard conversion
+                rec.residual_in_payment_currency = rec.wizard_id._convert_amount(residual_company, rec.wizard_id.payment_date)
 
     def action_delete_line(self):
         self.unlink()
