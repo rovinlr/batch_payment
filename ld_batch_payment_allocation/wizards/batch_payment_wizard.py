@@ -5,7 +5,10 @@ from odoo.tools import float_compare
 
 class BatchPaymentAllocationWizard(models.TransientModel):
     _name = "batch.payment.allocation.wizard"
-    _description = "Batch Payment Allocation (One payment -> Many invoices)"
+    _description =
+    journal_id = fields.Many2one('account.journal', string='Journal')
+    payment_currency_id = fields.Many2one('res.currency', string='Payment Currency', required=True, default=lambda self: self.env.company.currency_id)
+    company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company) "Batch Payment Allocation (One payment -> Many invoices)"
     company_currency_id = fields.Many2one('res.currency', related='company_id.currency_id', string='Company Currency', readonly=True, store=False)
 
     partner_type = fields.Selection([("customer","Customer"),("supplier","Vendor")], required=True, default="supplier")
@@ -146,7 +149,12 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         self.line_ids = lines
 
     # ---------- compute ----------
-    @api.depends("line_ids.amount_to_pay")
+    @api.onchange('journal_id')
+def _onchange_journal_id(self):
+    for w in self:
+        w.payment_currency_id = w.journal_id.currency_id or w.company_id.currency_id
+
+@api.depends("line_ids.amount_to_pay")
     def _compute_total_to_pay(self):
         for w in self:
             w.total_to_pay = sum(w.line_ids.mapped("amount_to_pay"))
@@ -282,6 +290,17 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             'name': _('Payments'),
             'target': 'current',
         }
+
+@api.depends('line_ids.amount_to_pay')
+def _compute_totals(self):
+    for w in self:
+        total = 0.0
+        try:
+            total = sum(w.line_ids.mapped('amount_to_pay'))
+        except Exception:
+            # fallback in case mapped not available in context
+            total = sum((l.amount_to_pay or 0.0) for l in getattr(w, 'line_ids', []))
+        w.total_to_pay = total
 
 class BatchPaymentAllocationWizardLine(models.TransientModel):
     _name = "batch.payment.allocation.wizard.line"
