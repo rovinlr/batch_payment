@@ -49,20 +49,20 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                                                     date or self.payment_date or fields.Date.context_today(self))
 
     # ---------- onchange ----------
-    @api.onchange(\"journal_id\")
+    @api.onchange('journal_id')
     def _onchange_journal(self):
         for w in self:
             if not w.journal_id:
                 continue
             w.payment_currency_id = w.journal_id.currency_id or w.company_id.currency_id
-            methods = (w.journal_id.inbound_payment_method_line_ids if w.partner_type == \"customer\"
+            methods = (w.journal_id.inbound_payment_method_line_ids if w.partner_type == "customer"
                        else w.journal_id.outbound_payment_method_line_ids)
             if not w.payment_method_line_id or (w.payment_method_line_id.journal_id != w.journal_id):
                 w.payment_method_line_id = methods[:1].id if methods else False
             w._load_invoices()
             w._load_unreconciled_payments()
 
-    @api.onchange(\"partner_type\", \"partner_id\", \"payment_date\")
+    @api.onchange('partner_type', 'partner_id', 'payment_date')
     def _onchange_partner(self):
         for w in self:
             w._load_invoices()
