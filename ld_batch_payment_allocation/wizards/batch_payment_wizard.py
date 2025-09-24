@@ -6,6 +6,7 @@ from odoo.tools import float_compare
 class BatchPaymentAllocationWizard(models.TransientModel):
     _name = "batch.payment.allocation.wizard"
     _description = "Batch Payment Allocation (One payment -> Many invoices)"
+    company_currency_id = fields.Many2one('res.currency', related='company_id.currency_id', string='Company Currency', readonly=True, store=False)
 
     partner_type = fields.Selection([("customer","Customer"),("supplier","Vendor")], required=True, default="supplier")
     partner_id = fields.Many2one("res.partner", string="Partner", required=True, domain="[('parent_id','=',False)]")
@@ -281,7 +282,6 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             'name': _('Payments'),
             'target': 'current',
         }
-
 
 class BatchPaymentAllocationWizardLine(models.TransientModel):
     _name = "batch.payment.allocation.wizard.line"
