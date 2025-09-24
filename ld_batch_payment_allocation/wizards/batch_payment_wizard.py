@@ -293,17 +293,12 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
     invoice_date = fields.Date(string="Invoice Date", readonly=True)
     residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="payment_currency_id", readonly=True)
     residual_in_company_currency = fields.Monetary(string="Residual (Company Currency)", currency_field="company_currency_id", readonly=True)
-amount_to_use = fields.Monetary(string="Amount to use", currency_field="payment_currency_id", help="Portion of this payment to apply.")
 
-@api.onchange('payment_id')
-def _onchange_payment_id(self):
     for rec in self:
         if rec.payment_id:
             # Default to full residual in payment currency
             rec.amount_to_use = rec.residual_in_payment_currency
 
-@api.constrains('amount_to_use')
-def _check_amount_to_use(self):
     for rec in self:
         if rec.amount_to_use and rec.amount_to_use < 0:
             raise ValidationError(_("Amount to use must be >= 0."))
@@ -357,6 +352,8 @@ class BatchPaymentAvailableLine(models.TransientModel):
 
     _name = "batch.payment.available.line"
     _description = "Outstanding Payments (to reconcile)"
+payment_currency_id = fields.Many2one('res.currency', related='payment_id.currency_id', string='Payment Currency', readonly=True, store=False)
+company_currency_id = fields.Many2one('res.currency', related='wizard_id.company_id.currency_id', string='Company Currency', readonly=True, store=False)
 
     wizard_id = fields.Many2one("batch.payment.allocation.wizard", required=True, ondelete="cascade")
     payment_id = fields.Many2one("account.payment", string="Payment", required=True)
