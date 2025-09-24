@@ -323,6 +323,8 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
 
 
 class BatchPaymentAvailableLine(models.TransientModel):
+    select = fields.Boolean(string='Apply')
+
     _name = "batch.payment.available.line"
     _description = "Outstanding Payments (to reconcile)"
 
@@ -339,3 +341,51 @@ class BatchPaymentAvailableLine(models.TransientModel):
     # Residuals
     residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="payment_currency_id", readonly=True)
     residual_in_company_currency = fields.Monetary(string="Residual (Company Currency)", currency_field="company_currency_id", readonly=True)
+
+
+def action_apply_selected_payments(self):
+    """Apply selected outstanding payments to the open invoices listed in this wizard.
+    MVP: asigna pagos completos/partiales automáticamente en orden FIFO hasta agotar.
+    """
+    self.ensure_one()
+    if not self.unreconciled_line_ids.filtered('select'):
+        raise UserError(_('Select at least one outstanding payment.'))
+    # Target invoice move lines (receivable/payable) with residual > 0
+    in_types = ('out_invoice','out_refund') if self.partner_type == 'customer' else ('in_invoice','in_refund')
+    invoice_lines = []
+    for l in self.line_ids:
+        if not l.move_id or l.move_id.move_type not in in_types:
+            continue
+        aml = l.move_id.line_ids.filtered(lambda x: x.account_id and x.account_id.account_type in ('asset_receivable','liability_payable') and not x.reconciled)
+        if aml:
+            invoice_lines.append(aml[0])
+    if not invoice_lines:
+        raise UserError(_('There are no open invoice lines to reconcile.'))
+    # Iterate payments selected
+    for avail in self.unreconciled_line_ids.filtered('select'):
+        pay = avail.payment_id
+        pay_lines = pay.line_ids.filtered(lambda x: x.account_id and x.account_id.account_type in ('asset_receivable','liability_payable') and not x.reconciled and x.partner_id.id == self.partner_id.id)
+        if not pay_lines:
+            continue
+        pay_line = pay_lines[0]
+        # Reconcile iteratively against invoices until payment is exhausted
+        for inv_line in invoice_lines:
+            if pay_line.reconciled:
+                break
+            if inv_line.reconciled:
+                continue
+            try:
+                (pay_line + inv_line).reconcile()
+            except Exception as e:
+                # If accounts differ, skip gracefully
+                continue
+    # Refresh lists
+    self._load_invoices()
+    self._load_unreconciled_payments()
+    return {
+        'type': 'ir.actions.act_window',
+        'res_model': 'batch.payment.allocation.wizard',
+        'view_mode': 'form',
+        'res_id': self.id,
+        'target': 'new',
+    }
