@@ -157,13 +157,14 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 payment_ids += payments.ids
             if not payment_ids:
                 raise UserError(_("No payments were created. Check the amounts to pay."))
-            return {
-                "type": "ir.actions.act_window",
-                "res_model": "account.payment",
-                "view_mode": "tree,form",
-                "domain": [("id", "in", payment_ids)],
-                "name": _("Payments"),
-            }
+        return {
+            \"type\": \"ir.actions.act_window\",
+            \"res_model\": \"account.payment\",
+            \"view_mode\": \"list,form\",
+            \"views\": [(False, \"list\"), (False, \"form\")],
+            \"name\": _(\"Payments\"),
+            \"target\": \"current\",
+        }
 
         # Grouped mode
         total_amount = 0.0
