@@ -28,8 +28,8 @@
                         <list editable="bottom">
                             <field name="move_id" options="{'no_create': True, 'no_open': False}"/>
                             <field name="invoice_date" readonly="1"/>
-                            <field name="residual_in_invoice_currency" readonly="1" widget="monetary" options="{\'currency_field\': \'invoice_currency_id\'}"/>
-                            <field name="residual_in_company_currency" readonly="1" widget="monetary" options="{\'currency_field\': \'company_currency_id\'}"/>
+                            <field name="residual_in_invoice_currency" readonly="1"  widget="monetary" readonly="1"/>
+                            <field name="residual_in_company_currency" readonly="1"  widget="monetary" readonly="1"/>
                             
                             <field name="amount_to_pay"/>
                             <field name="currency_id" readonly="1"/>
