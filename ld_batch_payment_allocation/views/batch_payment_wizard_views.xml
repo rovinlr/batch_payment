@@ -24,7 +24,7 @@
                     </group>
                 </group>
                 <group string="Open Invoices">
-                    <field name="line_ids">
+                    <field name="line_ids" nolabel="1">
                         <list editable="bottom">
                             <field name="invoice_currency_id" invisible="1" column_invisible="1" nolabel="1"/>
                             <field name="company_currency_id" invisible="1" column_invisible="1" nolabel="1"/>
@@ -34,14 +34,11 @@
                             <field name="residual_in_company_currency" widget="monetary" readonly="1"/>
                             <field name="amount_to_pay"/>
                             <field name="currency_id" readonly="1"/>
-                            <field name="to_delete"/>
-                            <button name="action_delete_line" string="Delete" type="object" class="btn-link" icon="fa-trash"/>
                         </list>
                     </field>
                 </group>
                 <footer>
                     <button string="Cancel" class="btn-secondary" special="cancel"/>
-                    <button name="action_remove_selected_lines" string="Remove selected" type="object" class="btn-secondary"/>
                     <button name="action_allocate" string="Generate Payment" type="object" class="btn-primary"/>
                 </footer>
             </form>
