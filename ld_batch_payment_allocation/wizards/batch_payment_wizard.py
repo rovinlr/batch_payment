@@ -159,9 +159,6 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             payment_ids = []
             for line in chosen:
                 amt_paycur, _res = _clamp_to_residual_paycur(line, line.amount_to_pay or 0.0)
-                if float_compare(amt_paycur, 0.0, precision_rounding=pay_currency.rounding) <= 0:
-                    continue
-                amt_company = self._pay_to_company(amt_paycur, date)
 
                 reg = self.env["account.payment.register"].with_context(
                     active_model="account.move", active_ids=[line.move_id.id]
@@ -170,7 +167,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                     "journal_id": self.journal_id.id,
                     "payment_method_line_id": self.payment_method_line_id.id,
                     "currency_id": pay_currency.id,  # display currency
-                    "amount": amt_company,           # amount is in company currency (Odoo 19)
+                    "amount": amt_paycur,           # amount is in company currency (Odoo 19)
                     "group_payment": False,
                     "communication": self.communication or "",
                 })
@@ -199,13 +196,11 @@ class BatchPaymentAllocationWizard(models.TransientModel):
 
         # Grouped payment (all invoices compatible with journal currency)
         total_amount = 0.0  # in pay currency
-        total_company = 0.0 # in company currency
         for line in chosen:
             amt_paycur, _res = _clamp_to_residual_paycur(line, line.amount_to_pay or 0.0)
             total_amount += amt_paycur
-            total_company += self._pay_to_company(amt_paycur, date)
 
-        if float_compare(total_company, 0.0, precision_rounding=self.company_id.currency_id.rounding) <= 0:
+        if float_compare(total_amount, 0.0, precision_rounding=self._get_payment_currency().rounding) <= 0:
             raise UserError(_("No payments were created. Check the amounts to pay."))
 
         move_ids = chosen.mapped("move_id").ids
@@ -216,7 +211,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             "journal_id": self.journal_id.id,
             "payment_method_line_id": self.payment_method_line_id.id,
             "currency_id": pay_currency.id,  # display currency
-            "amount": total_company,         # amount in company currency (Odoo 19)
+            "amount": total_amount,         # amount in company currency (Odoo 19)
             "group_payment": True,
             "communication": self.communication or "",
         })
