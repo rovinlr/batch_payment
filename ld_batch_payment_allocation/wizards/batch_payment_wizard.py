@@ -21,48 +21,54 @@ class BatchPaymentAllocationWizard(models.TransientModel):
     rate_source = fields.Selection([("company", "Company Rates (res.currency.rate)"), ("custom", "Custom Rate")],
                                    default="company", required=True, string="FX Rate Source")
     custom_rate = fields.Float(string="Custom Rate (1 Company CCY -> Payment CCY)", digits=(16, 6))
-    @api.onchange("journal_id")
-    def _onchange_journal(self):
-        for w in self:
-            if not w.journal_id:
-                continue
-            # Sync payment currency to journal currency or company currency
-            w.payment_currency_id = w.journal_id.currency_id or w.company_id.currency_id
-            # Pick a compatible payment method if missing or incompatible
-            methods = (w.journal_id.inbound_payment_method_line_ids if w.partner_type == "customer"
-                       else w.journal_id.outbound_payment_method_line_ids)
-            if not w.payment_method_line_id or (w.payment_method_line_id.journal_id != w.journal_id):
-                w.payment_method_line_id = methods[:1].id if methods else False
-            # Refresh lines (currency / amounts)
-            w._load_invoices()
-
 
     total_to_pay = fields.Monetary(string="Total to Pay", currency_field="payment_currency_id",
                                    compute="_compute_total_to_pay", store=False)
     line_ids = fields.One2many("batch.payment.allocation.wizard.line", "wizard_id", string="Invoices")
 
+    # ---------- helpers ----------
+    def _get_payment_currency(self):
+        self.ensure_one()
+        return self.journal_id.currency_id or self.company_id.currency_id
+
+    def _pay_to_company(self, amount_paycur, date):
+        """Convert amount from payment/journal currency -> company currency."""
+        pay_currency = self._get_payment_currency()
+        company_currency = self.company_id.currency_id
+        return pay_currency._convert(amount_paycur or 0.0, company_currency, self.company_id, date or fields.Date.context_today(self))
+
     def _convert_amount(self, amount_company_ccy, date):
+        """Convert from company currency -> payment/journal currency."""
         self.ensure_one()
         if not amount_company_ccy:
             return 0.0
-        if self.rate_source == "custom" and self.custom_rate:
-            return amount_company_ccy * self.custom_rate
-        return self.env.company.currency_id._convert(amount_company_ccy, self.payment_currency_id, self.company_id,
-                                                     date or self.payment_date or fields.Date.context_today(self))
+        pay_currency = self._get_payment_currency()
+        return self.company_id.currency_id._convert(amount_company_ccy, pay_currency, self.company_id,
+                                                    date or self.payment_date or fields.Date.context_today(self))
 
-    def _get_payment_currency(self):
-        self.ensure_one()
-        return self.journal_id.currency_id or self.payment_currency_id or self.company_id.currency_id
+    # ---------- onchange ----------
+    @api.onchange("journal_id")
+    def _onchange_journal(self):
+        for w in self:
+            if not w.journal_id:
+                continue
+            w.payment_currency_id = w.journal_id.currency_id or w.company_id.currency_id
+            methods = (w.journal_id.inbound_payment_method_line_ids if w.partner_type == "customer"
+                       else w.journal_id.outbound_payment_method_line_ids)
+            if not w.payment_method_line_id or (w.payment_method_line_id.journal_id != w.journal_id):
+                w.payment_method_line_id = methods[:1].id if methods else False
+            w._load_invoices()
 
-    @api.onchange("partner_type", "partner_id", "payment_currency_id", "payment_date", "rate_source", "custom_rate")
+    @api.onchange("partner_type", "partner_id", "payment_date")
     def _onchange_partner(self):
         for w in self:
             w._load_invoices()
 
+    # ---------- load invoices ----------
     def _load_invoices(self):
         self.ensure_one()
         self.line_ids = [(5, 0, 0)]
-        if not (self.partner_type and self.partner_id and self.payment_currency_id):
+        if not (self.partner_type and self.partner_id):
             return
         in_types = ("out_invoice","out_refund") if self.partner_type == "customer" else ("in_invoice","in_refund")
         moves = self.env["account.move"].search([
@@ -72,8 +78,10 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             ("payment_state", "in", ("not_paid", "partial")),
             ("company_id", "=", self.company_id.id),
         ], order="invoice_date asc, name asc")
+
         lines = []
         for mv in moves:
+            # Use receivable/payable lines to compute residuals
             rec_lines = mv.line_ids.filtered(lambda l: l.account_id and l.account_id.account_type in ('asset_receivable','liability_payable'))
             residual_company = abs(sum(rec_lines.mapped('amount_residual')))
             residual_invoice = abs(sum(rec_lines.mapped('amount_residual_currency'))) if mv.currency_id else residual_company
@@ -81,34 +89,23 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 continue
             residual_pay_cur = self._convert_amount(residual_company, self.payment_date)
             lines.append((0, 0, {
-                'move_id': mv.id,
-                'name': mv.name,
-                'invoice_date': mv.invoice_date,
-                'residual_in_payment_currency': residual_pay_cur,
-                'residual_in_company_currency': residual_company,
-                'residual_in_invoice_currency': residual_invoice,
-                'amount_to_pay': residual_pay_cur,
+                "move_id": mv.id,
+                "name": mv.name,
+                "invoice_date": mv.invoice_date,
+                "residual_in_company_currency": residual_company,
+                "residual_in_invoice_currency": residual_invoice,
+                "residual_in_payment_currency": residual_pay_cur,
+                "amount_to_pay": residual_pay_cur,
             }))
         self.line_ids = lines
 
+    # ---------- compute ----------
     @api.depends("line_ids.amount_to_pay")
     def _compute_total_to_pay(self):
         for w in self:
             w.total_to_pay = sum(w.line_ids.mapped("amount_to_pay"))
 
-    def action_remove_selected_lines(self):
-        self.ensure_one()
-        to_remove = self.line_ids.filtered(lambda l: l.to_delete)
-        if to_remove:
-            to_remove.unlink()
-        return {
-            'type': 'ir.actions.act_window',
-            'res_model': 'batch.payment.allocation.wizard',
-            'view_mode': 'form',
-            'res_id': self.id,
-            'target': 'new'
-        }
-
+    # ---------- actions ----------
     def action_allocate(self):
         self.ensure_one()
         if not self.line_ids:
@@ -116,7 +113,6 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         if not self.journal_id:
             raise UserError(_("Please select a Payment Journal."))
 
-        # Default payment method if missing
         if not self.payment_method_line_id:
             method = (self.journal_id.inbound_payment_method_line_ids if self.partner_type == "customer"
                       else self.journal_id.outbound_payment_method_line_ids)[:1]
@@ -132,7 +128,6 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             raise UserError(_("Please set a positive Amount to Pay for at least one invoice."))
 
         def _clamp_to_residual_paycur(line, amt_in_pay_currency):
-            # Compare the user-entered amount (already in payment/journal currency) with the residual converted to that currency.
             residual_company = abs(line.move_id.amount_residual)
             residual_paycur = line.move_id.company_currency_id._convert(residual_company, pay_currency, self.company_id, date)
             amt_paycur = amt_in_pay_currency or 0.0
@@ -142,25 +137,30 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 amt_paycur = 0.0
             return amt_paycur, residual_paycur
 
+        # If grouped but mixed currencies, fallback to per-invoice
+        mismatch = any(l.move_id.currency_id and l.move_id.currency_id != pay_currency for l in chosen)
+        if self.allocation_mode == "grouped" and mismatch:
+            self.allocation_mode = "per_invoice"
+
         if self.allocation_mode == "per_invoice":
             payment_ids = []
             for line in chosen:
-                amt_wizard_cur = line.amount_to_pay or 0.0  # already in pay currency
-                amt_paycur, _res = _clamp_to_residual_paycur(line, amt_wizard_cur)
+                amt_paycur, _res = _clamp_to_residual_paycur(line, line.amount_to_pay or 0.0)
                 if float_compare(amt_paycur, 0.0, precision_rounding=pay_currency.rounding) <= 0:
                     continue
+                amt_company = self._pay_to_company(amt_paycur, date)
+
                 reg = self.env["account.payment.register"].with_context(
                     active_model="account.move", active_ids=[line.move_id.id]
                 ).create({
                     "payment_date": date,
                     "journal_id": self.journal_id.id,
                     "payment_method_line_id": self.payment_method_line_id.id,
-                    "currency_id": pay_currency.id,
-                    "amount": amt_company,
+                    "currency_id": pay_currency.id,  # display currency
+                    "amount": amt_company,           # amount is in company currency (Odoo 19)
                     "group_payment": False,
                     "communication": self.communication or "",
                 })
-                # Force currency/amount so the compute methods don't override our user-entered amount
                 payments = reg._create_payments()
                 if not payments:
                     reg.action_create_payments()
@@ -168,11 +168,12 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                         ("partner_id", "=", self.partner_id.id),
                         ("journal_id", "=", self.journal_id.id),
                         ("date", "=", date),
-                        ("amount", "=", amt_paycur),
                     ], order="id desc", limit=1)
                 payment_ids += payments.ids
+
             if not payment_ids:
                 raise UserError(_("No payments were created. Check the amounts to pay."))
+
             return {
                 'type': 'ir.actions.act_window',
                 'res_model': 'account.payment',
@@ -183,16 +184,15 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 'target': 'current',
             }
 
-        # Grouped payment
-        total_amount = 0.0  # pay currency
-        total_company = 0.0  # company currency
+        # Grouped payment (all invoices compatible with journal currency)
+        total_amount = 0.0  # in pay currency
+        total_company = 0.0 # in company currency
         for line in chosen:
-            amt_wizard_cur = line.amount_to_pay or 0.0  # already in pay currency
-            amt_paycur, _res = _clamp_to_residual_paycur(line, amt_wizard_cur)
+            amt_paycur, _res = _clamp_to_residual_paycur(line, line.amount_to_pay or 0.0)
             total_amount += amt_paycur
             total_company += self._pay_to_company(amt_paycur, date)
 
-        if float_compare(total_amount, 0.0, precision_rounding=pay_currency.rounding) <= 0:
+        if float_compare(total_company, 0.0, precision_rounding=self.company_id.currency_id.rounding) <= 0:
             raise UserError(_("No payments were created. Check the amounts to pay."))
 
         move_ids = chosen.mapped("move_id").ids
@@ -202,12 +202,11 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             "payment_date": date,
             "journal_id": self.journal_id.id,
             "payment_method_line_id": self.payment_method_line_id.id,
-            "currency_id": pay_currency.id,
-            "amount": total_company,
+            "currency_id": pay_currency.id,  # display currency
+            "amount": total_company,         # amount in company currency (Odoo 19)
             "group_payment": True,
             "communication": self.communication or "",
         })
-        # Force currency/amount so the compute methods don't override our totals
         payments = reg._create_payments()
         if not payments:
             reg.action_create_payments()
@@ -215,8 +214,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 ("partner_id", "=", self.partner_id.id),
                 ("journal_id", "=", self.journal_id.id),
                 ("date", "=", date),
-                ("amount", "=", total_amount),
             ], order='id desc', limit=1)
+
         if not payments:
             raise UserError(_("No payments were created. Check the amounts to pay."))
 
@@ -240,31 +239,14 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
     name = fields.Char(string="Number", readonly=True)
     invoice_date = fields.Date(string="Invoice Date", readonly=True)
     residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="currency_id", readonly=True)
+    residual_in_company_currency = fields.Monetary(string="Residual (Company Currency)", currency_field="company_currency_id", readonly=True)
+    residual_in_invoice_currency = fields.Monetary(string="Residual (Invoice Currency)", currency_field="invoice_currency_id", readonly=True)
     amount_to_pay = fields.Monetary(string="Amount to Pay", currency_field="currency_id")
     currency_id = fields.Many2one(related="wizard_id.payment_currency_id", string="Currency", store=False, readonly=True)
     company_currency_id = fields.Many2one(related="wizard_id.company_id.currency_id", string="Company Currency", store=False, readonly=True)
     invoice_currency_id = fields.Many2one(related="move_id.currency_id", string="Invoice Currency", store=False, readonly=True)
-    residual_in_company_currency = fields.Monetary(string="Residual (Company Currency)", currency_field="company_currency_id", readonly=True)
-    residual_in_invoice_currency = fields.Monetary(string="Residual (Invoice Currency)", currency_field="invoice_currency_id", readonly=True)
-    to_delete = fields.Boolean(string="Delete?")
 
-    @api.constrains("amount_to_pay")
-    def _check_amount(self):
-        for rec in self:
-            if rec.amount_to_pay is None:
-                continue
-            if rec.amount_to_pay < 0:
-                raise ValidationError(_("Amount to pay must be >= 0."))
-
-    
-    @api.onchange("amount_to_pay")
-    def _onchange_amount_to_pay(self):
-        for rec in self:
-            if rec.amount_to_pay is None:
-                continue
-            if rec.amount_to_pay < 0:
-                rec.amount_to_pay = 0.0
-
+    @api.onchange("move_id")
     def _onchange_move(self):
         for rec in self:
             rec.name = rec.move_id.name or ""
@@ -275,14 +257,12 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
                 residual_invoice = abs(sum(rec_lines.mapped('amount_residual_currency'))) if rec.move_id.currency_id else residual_company
                 rec.residual_in_company_currency = residual_company
                 rec.residual_in_invoice_currency = residual_invoice
-                # refresh payment-currency residual via wizard conversion
                 rec.residual_in_payment_currency = rec.wizard_id._convert_amount(residual_company, rec.wizard_id.payment_date)
 
-    def action_delete_line(self):
-        self.unlink()
-
-
-    def _pay_to_company(self, amount_paycur, date):
-        pay_currency = self._get_payment_currency()
-        company_currency = self.company_id.currency_id
-        return pay_currency._convert(amount_paycur or 0.0, company_currency, self.company_id, date or fields.Date.context_today(self))
+    @api.onchange("amount_to_pay")
+    def _onchange_amount_to_pay(self):
+        for rec in self:
+            if rec.amount_to_pay is None:
+                continue
+            if rec.amount_to_pay < 0:
+                rec.amount_to_pay = 0.0

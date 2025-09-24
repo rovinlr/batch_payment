@@ -23,10 +23,12 @@
                         <field name="communication"/>
                     </group>
                 </group>
+
                 <separator string="Open Invoices"/>
                 <group col="4">
                     <field name="line_ids" nolabel="1" colspan="4">
                         <list editable="bottom">
+                            <!-- hidden but loaded currency fields so monetary widget shows symbols -->
                             <field name="invoice_currency_id" invisible="1" column_invisible="1" nolabel="1"/>
                             <field name="company_currency_id" invisible="1" column_invisible="1" nolabel="1"/>
                             <field name="move_id" options="{'no_create': True, 'no_open': False}"/>
@@ -38,6 +40,7 @@
                         </list>
                     </field>
                 </group>
+
                 <footer>
                     <button string="Cancel" class="btn-secondary" special="cancel"/>
                     <button name="action_allocate" string="Generate Payment" type="object" class="btn-primary"/>
