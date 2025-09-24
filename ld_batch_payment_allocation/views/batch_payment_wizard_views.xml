@@ -23,7 +23,7 @@
                         <field name="communication"/>
                     </group>
                 </group>
-                <group string="Open Invoices">
+                <group string="Open Invoices" col="1">
                     <field name="line_ids" nolabel="1">
                         <list editable="bottom">
                             <field name="invoice_currency_id" invisible="1" column_invisible="1" nolabel="1"/>
