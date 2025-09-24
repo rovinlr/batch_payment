@@ -20,6 +20,10 @@ class BatchPaymentAllocationWizard(models.TransientModel):
     total_to_pay = fields.Monetary(string="Total to Pay", currency_field="payment_currency_id", compute="_compute_total_to_pay", store=False)
     line_ids = fields.One2many("batch.payment.allocation.wizard.line", "wizard_id", string="Invoices")
 
+    def _get_payment_currency(self):
+        self.ensure_one()
+        return self.journal_id.currency_id or self.payment_currency_id or self.company_id.currency_id
+
     def _convert_amount(self, amount_company_ccy, date):
         self.ensure_one()
         if not amount_company_ccy:
@@ -95,6 +99,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 raise UserError(_("The selected journal has no compatible payment method."))
             self.payment_method_line_id = method.id
 
+        pay_currency = self._get_payment_currency()
+
         chosen = self.line_ids.filtered(lambda l: l.amount_to_pay and l.amount_to_pay > 0.0)
         if not chosen:
             raise UserError(_("Please set a positive Amount to Pay for at least one invoice."))
@@ -102,27 +108,43 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         if self.allocation_mode == "per_invoice":
             payment_ids = []
             for line in chosen:
-                residual = line.residual_in_payment_currency or 0.0
+                residual_paycur = self.env.company.currency_id._convert(
+                    line.residual_in_payment_currency if self.payment_currency_id == pay_currency else
+                    # if the stored residual is not in pay currency, recompute from company currency:
+                    self.env.company.currency_id._convert(line.residual_in_payment_currency, self.payment_currency_id, self.company_id, self.payment_date or fields.Date.context_today(self)),
+                    pay_currency, self.company_id, self.payment_date or fields.Date.context_today(self)
+                ) if self.payment_currency_id != pay_currency else line.residual_in_payment_currency
+
                 amt = line.amount_to_pay or 0.0
-                if amt > residual:
-                    amt = residual
+                # if wizard currency != pay currency, convert amount_to_pay to pay currency
+                if self.payment_currency_id != pay_currency:
+                    amt = self.payment_currency_id._convert(amt, pay_currency, self.company_id, self.payment_date or fields.Date.context_today(self))
+
+                # clamp
+                if residual_paycur is None:
+                    residual_paycur = 0.0
+                if amt > residual_paycur:
+                    amt = residual_paycur
                 if amt <= 0:
                     continue
+
                 reg = self.env["account.payment.register"].with_context(
                     active_model="account.move", active_ids=[line.move_id.id]
                 ).create({
                     "payment_date": self.payment_date,
                     "journal_id": self.journal_id.id,
                     "payment_method_line_id": self.payment_method_line_id.id,
-                    "currency_id": self.payment_currency_id.id,
+                    "currency_id": pay_currency.id,
                     "amount": amt,
                     "group_payment": False,
                     "communication": self.communication or "",
                 })
                 payments = reg._create_payments()
                 payment_ids += payments.ids
+
             if not payment_ids:
                 raise UserError(_("No payments were created. Check the amounts to pay."))
+
             return {
                 "type": "ir.actions.act_window",
                 "res_model": "account.payment",
@@ -130,6 +152,46 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 "domain": [("id", "in", payment_ids)],
                 "name": _("Payments"),
             }
+
+        # Grouped
+        total_amount = 0.0
+        for line in chosen:
+            residual_paycur = line.residual_in_payment_currency or 0.0
+            amt = line.amount_to_pay or 0.0
+            # convert to pay currency if needed
+            if self.payment_currency_id != pay_currency:
+                residual_paycur = self.payment_currency_id._convert(residual_paycur, pay_currency, self.company_id, self.payment_date or fields.Date.context_today(self))
+                amt = self.payment_currency_id._convert(amt, pay_currency, self.company_id, self.payment_date or fields.Date.context_today(self))
+            if amt > residual_paycur:
+                amt = residual_paycur
+            if amt < 0:
+                amt = 0.0
+            total_amount += amt
+
+        if total_amount <= 0:
+            raise UserError(_("Total amount to pay must be greater than zero."))
+
+        move_ids = chosen.mapped("move_id").ids
+        reg = self.env["account.payment.register"].with_context(
+            active_model="account.move", active_ids=move_ids
+        ).create({
+            "payment_date": self.payment_date,
+            "journal_id": self.journal_id.id,
+            "payment_method_line_id": self.payment_method_line_id.id,
+            "currency_id": pay_currency.id,
+            "amount": total_amount,
+            "group_payment": True,
+            "communication": self.communication or "",
+        })
+        payments = reg._create_payments()
+
+        return {
+            "type": "ir.actions.act_window",
+            "res_model": "account.payment",
+            "view_mode": "tree,form",
+            "domain": [("id", "in", payments.ids)],
+            "name": _("Payments"),
+        }
 
         # Grouped: single payment for the sum; clamp amounts to residual to avoid rounding issues
         total_amount = 0.0
