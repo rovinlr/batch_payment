@@ -156,12 +156,11 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                     "journal_id": self.journal_id.id,
                     "payment_method_line_id": self.payment_method_line_id.id,
                     "currency_id": pay_currency.id,
-                    "amount": amt_paycur,
+                    "amount": amt_company,
                     "group_payment": False,
                     "communication": self.communication or "",
                 })
                 # Force currency/amount so the compute methods don't override our user-entered amount
-                reg.write({'currency_id': pay_currency.id, 'amount': amt_paycur})
                 payments = reg._create_payments()
                 if not payments:
                     reg.action_create_payments()
@@ -185,11 +184,13 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             }
 
         # Grouped payment
-        total_amount = 0.0
+        total_amount = 0.0  # pay currency
+        total_company = 0.0  # company currency
         for line in chosen:
             amt_wizard_cur = line.amount_to_pay or 0.0  # already in pay currency
             amt_paycur, _res = _clamp_to_residual_paycur(line, amt_wizard_cur)
             total_amount += amt_paycur
+            total_company += self._pay_to_company(amt_paycur, date)
 
         if float_compare(total_amount, 0.0, precision_rounding=pay_currency.rounding) <= 0:
             raise UserError(_("No payments were created. Check the amounts to pay."))
@@ -202,12 +203,11 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             "journal_id": self.journal_id.id,
             "payment_method_line_id": self.payment_method_line_id.id,
             "currency_id": pay_currency.id,
-            "amount": total_amount,
+            "amount": total_company,
             "group_payment": True,
             "communication": self.communication or "",
         })
         # Force currency/amount so the compute methods don't override our totals
-        reg.write({'currency_id': pay_currency.id, 'amount': total_amount})
         payments = reg._create_payments()
         if not payments:
             reg.action_create_payments()
@@ -280,3 +280,9 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
 
     def action_delete_line(self):
         self.unlink()
+
+
+    def _pay_to_company(self, amount_paycur, date):
+        pay_currency = self._get_payment_currency()
+        company_currency = self.company_id.currency_id
+        return pay_currency._convert(amount_paycur or 0.0, company_currency, self.company_id, date or fields.Date.context_today(self))
