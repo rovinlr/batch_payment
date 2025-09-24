@@ -259,20 +259,8 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
         for rec in self:
             if rec.amount_to_pay is None:
                 continue
-            # Compute residual in the payment currency on the fly (don't rely on hidden field)
-            move = rec.move_id
-            if not move:
-                continue
-            date = rec.wizard_id.payment_date or fields.Date.context_today(self)
-            pay_currency = rec.currency_id or rec.wizard_id.payment_currency_id or rec.wizard_id.company_id.currency_id
-            residual_company = abs(move.amount_residual)
-            residual_paycur = move.company_currency_id._convert(residual_company, pay_currency, rec.wizard_id.company_id, date)
-            # clamp
-            if rec.amount_to_pay > residual_paycur:
-                rec.amount_to_pay = residual_paycur
             if rec.amount_to_pay < 0:
                 rec.amount_to_pay = 0.0
-
 
     def _onchange_move(self):
         for rec in self:
