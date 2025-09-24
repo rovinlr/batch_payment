@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Action already defined elsewhere: action_open_batch_payment_allocation_wizard -->
+    <!-- Action to open the wizard -->
+    <record id="action_open_batch_payment_allocation_wizard" model="ir.actions.act_window">
+        <field name="name">Batch Payment Allocation</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">batch.payment.allocation.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="context">{}</field>
+    </record>
+
+    <!-- Menu under Accounting/Contabilidad/Transacciones -->
     <menuitem id="menu_ld_batch_pay_entries"
               name="Pagos por Lotes"
               parent="account.menu_finance_entries"
