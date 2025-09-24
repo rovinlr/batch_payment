@@ -160,6 +160,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                     "group_payment": False,
                     "communication": self.communication or "",
                 })
+                # Force currency/amount so the compute methods don't override our user-entered amount
+                reg.write({'currency_id': pay_currency.id, 'amount': amt_paycur})
                 payments = reg._create_payments()
                 if not payments:
                     reg.action_create_payments()
@@ -204,6 +206,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             "group_payment": True,
             "communication": self.communication or "",
         })
+        # Force currency/amount so the compute methods don't override our totals
+        reg.write({'currency_id': pay_currency.id, 'amount': total_amount})
         payments = reg._create_payments()
         if not payments:
             reg.action_create_payments()
