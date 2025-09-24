@@ -59,7 +59,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         ], order="invoice_date asc, name asc")
         lines = []
         for mv in moves:
-            rec_lines = mv.line_ids.filtered(lambda l: l.account_internal_type in ('receivable','payable'))
+            rec_lines = mv.line_ids.filtered(lambda l: l.account_id and l.account_id.account_type in ('asset_receivable','liability_payable'))
             residual_company = abs(sum(rec_lines.mapped('amount_residual')))
             residual_invoice = abs(sum(rec_lines.mapped('amount_residual_currency'))) if mv.currency_id else residual_company
             if residual_company <= 0 and residual_invoice <= 0:
@@ -253,7 +253,7 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
             rec.name = rec.move_id.name or ""
             rec.invoice_date = rec.move_id.invoice_date
             if rec.move_id:
-                rec_lines = rec.move_id.line_ids.filtered(lambda l: l.account_internal_type in ('receivable','payable'))
+                rec_lines = rec.move_id.line_ids.filtered(lambda l: l.account_id and l.account_id.account_type in ('asset_receivable','liability_payable'))
                 residual_company = abs(sum(rec_lines.mapped('amount_residual')))
                 residual_invoice = abs(sum(rec_lines.mapped('amount_residual_currency'))) if rec.move_id.currency_id else residual_company
                 rec.residual_in_company_currency = residual_company
