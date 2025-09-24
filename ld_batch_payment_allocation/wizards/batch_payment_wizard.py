@@ -285,6 +285,12 @@ class BatchPaymentAllocationWizard(models.TransientModel):
 
 
 class BatchPaymentAllocationWizardLine(models.TransientModel):
+    invoice_currency_id = fields.Many2one('res.currency', related='move_id.currency_id', string='Invoice Currency', readonly=True)
+company_currency_id = fields.Many2one('res.currency', related='wizard_id.company_id.currency_id', string='Company Currency', readonly=True)
+payment_currency_id = fields.Many2one('res.currency', related='wizard_id.payment_currency_id', string='Payment Currency', readonly=True)
+# Alias used by monetary widgets on this line (Amount to Pay, etc.)
+currency_id = fields.Many2one('res.currency', related='wizard_id.payment_currency_id', string='Currency', readonly=True)
+
     payment_currency_id = fields.Many2one('res.currency', related='wizard_id.payment_currency_id', string='Payment Currency', readonly=True)
     _name = "batch.payment.allocation.wizard.line"
     _description = "Batch Payment Allocation Line"
@@ -312,7 +318,7 @@ def _check_amount_to_use(self):
         if rec.amount_to_use and rec.residual_in_payment_currency and rec.amount_to_use > rec.residual_in_payment_currency + rec.payment_currency_id.rounding:
             raise ValidationError(_("Amount to use cannot exceed the payment residual."))
     residual_in_invoice_currency = fields.Monetary(string="Residual (Invoice Currency)", currency_field="invoice_currency_id", readonly=True)
-    amount_to_pay = fields.Monetary(string="Amount to Pay", currency_field="currency_id")
+    amount_to_pay = fields.Monetary(string="Amount to Pay", currency_field='currency_id')
     currency_id = fields.Many2one(related="wizard_id.payment_currency_id", string="Currency", store=False, readonly=True)
     company_currency_id = fields.Many2one(related="wizard_id.company_id.currency_id", string="Company Currency", store=False, readonly=True)
     invoice_currency_id = fields.Many2one(related="move_id.currency_id", string="Invoice Currency", store=False, readonly=True)
