@@ -15,15 +15,16 @@ class BatchPaymentAllocationWizard(models.TransientModel):
     payment_date = fields.Date(default=fields.Date.context_today, required=True)
     payment_currency_id = fields.Many2one("res.currency", string="Payment Currency", required=True, default=lambda self: self.env.company.currency_id)
     communication = fields.Char(string="Memo / Reference")
-    allocation_mode = fields.Selection([("grouped", "One Grouped Payment"), ("per_invoice", "One Payment per Invoice")], default="grouped", required=True, string="Allocation Mode")
-    rate_source = fields.Selection([("company", "Company Rates (res.currency.rate)"), ("custom", "Custom Rate")], default="company", required=True, string="FX Rate Source")
-    custom_rate = fields.Float(string="Custom Rate (1 Company CCY -> Payment CCY)", digits=(16, 6))
-    total_to_pay = fields.Monetary(string="Total to Pay", currency_field="payment_currency_id", compute="_compute_total_to_pay", store=False)
-    line_ids = fields.One2many("batch.payment.allocation.wizard.line", "wizard_id", string="Invoices")
 
-    def _get_payment_currency(self):
-        self.ensure_one()
-        return self.journal_id.currency_id or self.payment_currency_id or self.company_id.currency_id
+    allocation_mode = fields.Selection([("grouped", "One Grouped Payment"), ("per_invoice", "One Payment per Invoice")],
+                                       default="grouped", required=True, string="Allocation Mode")
+    rate_source = fields.Selection([("company", "Company Rates (res.currency.rate)"), ("custom", "Custom Rate")],
+                                   default="company", required=True, string="FX Rate Source")
+    custom_rate = fields.Float(string="Custom Rate (1 Company CCY -> Payment CCY)", digits=(16, 6))
+
+    total_to_pay = fields.Monetary(string="Total to Pay", currency_field="payment_currency_id",
+                                   compute="_compute_total_to_pay", store=False)
+    line_ids = fields.One2many("batch.payment.allocation.wizard.line", "wizard_id", string="Invoices")
 
     def _convert_amount(self, amount_company_ccy, date):
         self.ensure_one()
@@ -31,8 +32,12 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             return 0.0
         if self.rate_source == "custom" and self.custom_rate:
             return amount_company_ccy * self.custom_rate
-        # Use the company's currency conversion to the payment currency on the given date
-        return self.env.company.currency_id._convert(amount_company_ccy, self.payment_currency_id, self.company_id, date or self.payment_date or fields.Date.context_today(self))
+        return self.env.company.currency_id._convert(amount_company_ccy, self.payment_currency_id, self.company_id,
+                                                     date or self.payment_date or fields.Date.context_today(self))
+
+    def _get_payment_currency(self):
+        self.ensure_one()
+        return self.journal_id.currency_id or self.payment_currency_id or self.company_id.currency_id
 
     @api.onchange("partner_type", "partner_id", "payment_currency_id", "payment_date", "rate_source", "custom_rate")
     def _onchange_partner(self):
@@ -78,14 +83,13 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         if to_remove:
             to_remove.unlink()
         return {
-            "type": "ir.actions.act_window",
-            "res_model": "batch.payment.allocation.wizard",
-            "view_mode": "form",
-            "res_id": self.id,
-            "target": "new"
+            'type': 'ir.actions.act_window',
+            'res_model': 'batch.payment.allocation.wizard',
+            'view_mode': 'form',
+            'res_id': self.id,
+            'target': 'new'
         }
 
-    
     def action_allocate(self):
         self.ensure_one()
         if not self.line_ids:
@@ -93,7 +97,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         if not self.journal_id:
             raise UserError(_("Please select a Payment Journal."))
 
-        # Choose default payment method if missing
+        # Default payment method if missing
         if not self.payment_method_line_id:
             method = (self.journal_id.inbound_payment_method_line_ids if self.partner_type == "customer"
                       else self.journal_id.outbound_payment_method_line_ids)[:1]
@@ -103,23 +107,19 @@ class BatchPaymentAllocationWizard(models.TransientModel):
 
         pay_currency = self._get_payment_currency()
         date = self.payment_date or fields.Date.context_today(self)
+
         chosen = self.line_ids.filtered(lambda l: l.amount_to_pay and l.amount_to_pay > 0.0)
         if not chosen:
             raise UserError(_("Please set a positive Amount to Pay for at least one invoice."))
 
-        # Helper to round and compare with pay currency precision
         def _clamp_to_residual_paycur(line, amt_in_wizard_cur):
-            # compute residual in pay currency from move's company residual
             residual_company = abs(line.move_id.amount_residual)
             residual_paycur = line.move_id.company_currency_id._convert(residual_company, pay_currency, self.company_id, date)
-            # convert amount_to_pay from wizard currency to pay currency if needed
             amt_paycur = amt_in_wizard_cur
             if self.payment_currency_id != pay_currency:
                 amt_paycur = self.payment_currency_id._convert(amt_in_wizard_cur, pay_currency, self.company_id, date)
-            # clamp with currency-aware compare
             if float_compare(amt_paycur, residual_paycur, precision_rounding=pay_currency.rounding) > 0:
                 amt_paycur = residual_paycur
-            # zero guard
             if float_compare(amt_paycur, 0.0, precision_rounding=pay_currency.rounding) < 0:
                 amt_paycur = 0.0
             return amt_paycur, residual_paycur
@@ -128,7 +128,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             payment_ids = []
             for line in chosen:
                 amt_wizard_cur = line.amount_to_pay or 0.0
-                amt_paycur, residual_paycur = _clamp_to_residual_paycur(line, amt_wizard_cur)
+                amt_paycur, _res = _clamp_to_residual_paycur(line, amt_wizard_cur)
                 if float_compare(amt_paycur, 0.0, precision_rounding=pay_currency.rounding) <= 0:
                     continue
                 reg = self.env["account.payment.register"].with_context(
@@ -144,33 +144,31 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 })
                 payments = reg._create_payments()
                 if not payments:
-                    # try public action as fallback
-                    act = reg.action_create_payments()
-                    # action may create but not return records; try to find newest payment by partner/journal/date
-                    created = self.env["account.payment"].search([
+                    reg.action_create_payments()
+                    payments = self.env["account.payment"].search([
                         ("partner_id", "=", self.partner_id.id),
                         ("journal_id", "=", self.journal_id.id),
                         ("date", "=", date),
                         ("amount", "=", amt_paycur),
                     ], order="id desc", limit=1)
-                    payments = created
                 payment_ids += payments.ids
             if not payment_ids:
                 raise UserError(_("No payments were created. Check the amounts to pay."))
-        return {
-            \"type\": \"ir.actions.act_window\",
-            \"res_model\": \"account.payment\",
-            \"view_mode\": \"list,form\",
-            \"views\": [(False, \"list\"), (False, \"form\")],
-            \"name\": _(\"Payments\"),
-            \"target\": \"current\",
-        }
+            return {
+                'type': 'ir.actions.act_window',
+                'res_model': 'account.payment',
+                'view_mode': 'list,form',
+                'views': [(False, 'list'), (False, 'form')],
+                'domain': [('id', 'in', payment_ids)],
+                'name': _('Payments'),
+                'target': 'current',
+            }
 
-        # Grouped mode
+        # Grouped payment
         total_amount = 0.0
         for line in chosen:
             amt_wizard_cur = line.amount_to_pay or 0.0
-            amt_paycur, residual_paycur = _clamp_to_residual_paycur(line, amt_wizard_cur)
+            amt_paycur, _res = _clamp_to_residual_paycur(line, amt_wizard_cur)
             total_amount += amt_paycur
 
         if float_compare(total_amount, 0.0, precision_rounding=pay_currency.rounding) <= 0:
@@ -190,100 +188,24 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         })
         payments = reg._create_payments()
         if not payments:
-            act = reg.action_create_payments()
-            created = self.env["account.payment"].search([
+            reg.action_create_payments()
+            payments = self.env["account.payment"].search([
                 ("partner_id", "=", self.partner_id.id),
                 ("journal_id", "=", self.journal_id.id),
                 ("date", "=", date),
                 ("amount", "=", total_amount),
-            ], order="id desc", limit=1)
-            payments = created
-
+            ], order='id desc', limit=1)
         if not payments:
             raise UserError(_("No payments were created. Check the amounts to pay."))
 
         return {
-            "type": "ir.actions.act_window",
-            "res_model": "account.payment",
-            "view_mode": "tree,form",
-            "domain": [("id", "in", payments.ids)],
-            "name": _("Payments"),
-        }
-
-        # Grouped
-        total_amount = 0.0
-        for line in chosen:
-            residual_paycur = line.residual_in_payment_currency or 0.0
-            amt = line.amount_to_pay or 0.0
-            # convert to pay currency if needed
-            if self.payment_currency_id != pay_currency:
-                residual_paycur = self.payment_currency_id._convert(residual_paycur, pay_currency, self.company_id, self.payment_date or fields.Date.context_today(self))
-                amt = self.payment_currency_id._convert(amt, pay_currency, self.company_id, self.payment_date or fields.Date.context_today(self))
-            if amt > residual_paycur:
-                amt = residual_paycur
-            if amt < 0:
-                amt = 0.0
-            total_amount += amt
-
-        if total_amount <= 0:
-            raise UserError(_("Total amount to pay must be greater than zero."))
-
-        move_ids = chosen.mapped("move_id").ids
-        reg = self.env["account.payment.register"].with_context(
-            active_model="account.move", active_ids=move_ids
-        ).create({
-            "payment_date": self.payment_date,
-            "journal_id": self.journal_id.id,
-            "payment_method_line_id": self.payment_method_line_id.id,
-            "currency_id": pay_currency.id,
-            "amount": total_amount,
-            "group_payment": True,
-            "communication": self.communication or "",
-        })
-        payments = reg._create_payments()
-
-        return {
-            "type": "ir.actions.act_window",
-            "res_model": "account.payment",
-            "view_mode": "tree,form",
-            "domain": [("id", "in", payments.ids)],
-            "name": _("Payments"),
-        }
-
-        # Grouped: single payment for the sum; clamp amounts to residual to avoid rounding issues
-        total_amount = 0.0
-        for line in chosen:
-            residual = line.residual_in_payment_currency or 0.0
-            amt = line.amount_to_pay or 0.0
-            if amt > residual:
-                amt = residual
-            if amt < 0:
-                amt = 0.0
-            total_amount += amt
-
-        if total_amount <= 0:
-            raise UserError(_("Total amount to pay must be greater than zero."))
-
-        move_ids = chosen.mapped("move_id").ids
-        reg = self.env["account.payment.register"].with_context(
-            active_model="account.move", active_ids=move_ids
-        ).create({
-            "payment_date": self.payment_date,
-            "journal_id": self.journal_id.id,
-            "payment_method_line_id": self.payment_method_line_id.id,
-            "currency_id": self.payment_currency_id.id,
-            "amount": total_amount,
-            "group_payment": True,
-            "communication": self.communication or "",
-        })
-        payments = reg._create_payments()
-
-        return {
-            "type": "ir.actions.act_window",
-            "res_model": "account.payment",
-            "view_mode": "tree,form",
-            "domain": [("id", "in", payments.ids)],
-            "name": _("Payments"),
+            'type': 'ir.actions.act_window',
+            'res_model': 'account.payment',
+            'view_mode': 'list,form',
+            'views': [(False, 'list'), (False, 'form')],
+            'domain': [('id', 'in', payments.ids)],
+            'name': _('Payments'),
+            'target': 'current',
         }
 
 
