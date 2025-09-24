@@ -285,6 +285,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
 
 
 class BatchPaymentAllocationWizardLine(models.TransientModel):
+    payment_currency_id = fields.Many2one('res.currency', related='wizard_id.payment_currency_id', string='Payment Currency', readonly=True)
     _name = "batch.payment.allocation.wizard.line"
     _description = "Batch Payment Allocation Line"
 
