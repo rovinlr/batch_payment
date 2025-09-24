@@ -13,7 +13,6 @@ class BatchPaymentAllocationWizard(models.TransientModel):
     journal_id = fields.Many2one("account.journal", string="Payment Journal", required=True, domain="[('type','in',('bank','cash'))]")
     payment_method_line_id = fields.Many2one("account.payment.method.line", string="Payment Method", domain="[('journal_id','=',journal_id)]")
     payment_date = fields.Date(default=fields.Date.context_today, required=True)
-    payment_currency_id = fields.Many2one("res.currency", string="Payment Currency", required=True, default=lambda self: self.env.company.currency_id)
     communication = fields.Char(string="Memo / Reference")
 
     allocation_mode = fields.Selection([("grouped", "One Grouped Payment"), ("per_invoice", "One Payment per Invoice")],
@@ -285,13 +284,29 @@ class BatchPaymentAllocationWizard(models.TransientModel):
 
 
 class BatchPaymentAllocationWizardLine(models.TransientModel):
-    invoice_currency_id = fields.Many2one('res.currency', related='move_id.currency_id', string='Invoice Currency', readonly=True)
 company_currency_id = fields.Many2one('res.currency', related='wizard_id.company_id.currency_id', string='Company Currency', readonly=True)
-payment_currency_id = fields.Many2one('res.currency', related='wizard_id.payment_currency_id', string='Payment Currency', readonly=True)
+payment_cu
+# --- Currency context on line ---
+invoice_currency_id = fields.Many2one(
+    'res.currency', related='move_id.currency_id',
+    string='Invoice Currency', readonly=True, store=False
+)
+company_currency_id = fields.Many2one(
+    'res.currency', related='wizard_id.company_id.currency_id',
+    string='Company Currency', readonly=True, store=False
+)
+payment_currency_id = fields.Many2one(
+    'res.currency', related='wizard_id.payment_currency_id',
+    string='Payment Currency', readonly=True, store=False
+)
+# Alias for monetary widgets on the line (e.g., Amount to Pay)
+currency_id = fields.Many2one(
+    'res.currency', related='wizard_id.payment_currency_id',
+    string='Currency', readonly=True, store=False
+)
+rrency_id = fields.Many2one('res.currency', related='wizard_id.payment_currency_id', string='Payment Currency', readonly=True)
 # Alias used by monetary widgets on this line (Amount to Pay, etc.)
 currency_id = fields.Many2one('res.currency', related='wizard_id.payment_currency_id', string='Currency', readonly=True)
-
-    payment_currency_id = fields.Many2one('res.currency', related='wizard_id.payment_currency_id', string='Payment Currency', readonly=True)
     _name = "batch.payment.allocation.wizard.line"
     _description = "Batch Payment Allocation Line"
 
@@ -319,9 +334,6 @@ def _check_amount_to_use(self):
             raise ValidationError(_("Amount to use cannot exceed the payment residual."))
     residual_in_invoice_currency = fields.Monetary(string="Residual (Invoice Currency)", currency_field="invoice_currency_id", readonly=True)
     amount_to_pay = fields.Monetary(string="Amount to Pay", currency_field='currency_id')
-    currency_id = fields.Many2one(related="wizard_id.payment_currency_id", string="Currency", store=False, readonly=True)
-    company_currency_id = fields.Many2one(related="wizard_id.company_id.currency_id", string="Company Currency", store=False, readonly=True)
-    invoice_currency_id = fields.Many2one(related="move_id.currency_id", string="Invoice Currency", store=False, readonly=True)
 
     @api.onchange("move_id")
     def _onchange_move(self):
@@ -358,8 +370,6 @@ class BatchPaymentAvailableLine(models.TransientModel):
     payment_date = fields.Date(related="payment_id.date", string="Payment Date", readonly=True, store=False)
 
     # Currencies
-    payment_currency_id = fields.Many2one(related="payment_id.currency_id", string="Payment Currency", readonly=True, store=False)
-    company_currency_id = fields.Many2one(related="wizard_id.company_id.currency_id", string="Company Currency", readonly=True, store=False)
 
     # Residuals
     residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="payment_currency_id", readonly=True)
