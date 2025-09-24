@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_batch_payment_allocation_wizard_form" model="ir.ui.view">
+        <field name="name">batch.payment.allocation.wizard.form</field>
+        <field name="model">batch.payment.allocation.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Batch Payment Allocation">
+                <group>
+                    <group>
+                        <field name="partner_type"/>
+                        <field name="partner_id" options="{'no_create': True}"/>
+                        <field name="company_id"/>
+                    </group>
+                    <group>
+                        <field name="journal_id"/>
+                        <field name="payment_method_line_id"/>
+                        <field name="payment_date"/>
+                        <field name="payment_currency_id"/>
+<field name="allocation_mode"/>
+<field name="rate_source"/>
+<field name="custom_rate" attrs="{'invisible': [('rate_source', '=', 'company')]}"/>
+                        <field name="total_to_pay" readonly="1"/>
+                        <field name="communication"/>
+                    </group>
+                </group>
+                <group string="Open Invoices">
+                    <field name="line_ids">
+                        <list editable="bottom">
+                            <field name="move_id" options="{'no_create': True, 'no_open': False}"/>
+<field name="to_delete"/>
+                            <field name="invoice_date" readonly="1"/>
+                            <field name="residual_in_payment_currency" readonly="1"/>
+                            <field name="amount_to_pay"/>
+                            <field name="currency_id" readonly="1"/>
+<button name="action_delete_line" string="Delete" type="object" class="btn-link" icon="fa-trash"/>
+                        </list>
+                    </field>
+                </group>
+                <footer>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                    <button name="action_remove_selected_lines" string="Remove selected" type="object" class="btn-secondary"/>
+<button name="action_allocate" string="Generate Payment" type="object" class="btn-primary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>
