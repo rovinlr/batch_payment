@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_batch_payment_allocation_wizard_form_inherit_reorder_and_payments" model="ir.ui.view">
+        <field name="name">batch.payment.allocation.wizard.form.inherit.reorder.payments</field>
+        <field name="model">batch.payment.allocation.wizard</field>
+        <field name="inherit_id" ref="ld_batch_payment_allocation.view_batch_payment_allocation_wizard_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='line_ids']/list" position="replace">
+                <list editable="bottom" string="Invoices">
+                    <field name="name" string="Number"/>
+                    <field name="invoice_date"/>
+                    <field name="move_id"/>
+                    <field name="residual_in_payment_currency"/>
+                    <field name="residual_in_invoice_currency"/>
+                    <field name="residual_in_company_currency"/>
+                    <field name="amount_to_pay"/>
+                    <field name="currency_id" readonly="1"/>
+                </list>
+            </xpath>
+
+            <xpath expr="//form" position="inside">
+                <separator string="Unreconciled Payments"/>
+                <group>
+                    <field name="unreconciled_payment_line_ids" context="{'default_wizard_id': active_id}">
+                        <tree editable="bottom" string="Unreconciled Payments">
+                            <field name="select"/>
+                            <field name="payment_id"/>
+                            <field name="payment_date"/>
+                            <field name="journal_id"/>
+                            <field name="available_payment_currency"/>
+                            <field name="available_company"/>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="company_currency_id" invisible="1"/>
+                        </tree>
+                    </field>
+                </group>
+                <footer position="inside">
+                    <button name="action_apply_selected_payments"
+                            string="Apply Selected Payments"
+                            type="object"
+                            class="btn-primary"/>
+                </footer>
+            </xpath>
+        </field>
+    </record>
+</odoo>

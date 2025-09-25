@@ -10,7 +10,8 @@
     "data": [
         "security/ir.model.access.csv",
         "views/menu.xml",
-        "views/batch_payment_wizard_views.xml"
+        "views/batch_payment_wizard_views.xml",
+        "views/batch_payment_unreconciled_views.xml"
     ],
     "application": False,
     "installable": True
