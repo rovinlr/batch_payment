@@ -157,7 +157,9 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         for w in self:
             w.payment_currency_id = w.journal_id.currency_id or w.company_id.currency_id
 
-    total_to_pay = fields.Monetary(string='Total to pay', currency_field='payment_currency_id', compute='_compute_totals', store=False)class BatchPaymentAllocationWizardLine(models.TransientModel):
+    total_to_pay = fields.Monetary(string='Total to pay', currency_field='payment_currency_id', compute='_compute_totals', store=False)
+
+class BatchPaymentAllocationWizardLine(models.TransientModel):
     _name = "batch.payment.allocation.wizard.line"
     _description = "Batch Payment Allocation Line"
 
