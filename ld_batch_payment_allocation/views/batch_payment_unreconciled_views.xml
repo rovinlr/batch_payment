@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Dedicated list view for the One2many comodel -->
     <record id="view_unreconciled_payment_line_list" model="ir.ui.view">
         <field name="name">batch.payment.unreconciled.line.list</field>
         <field name="model">batch.payment.unreconciled.line</field>
         <field name="arch" type="xml">
-            <list string="Unreconciled Credits/Payments">
+            <list string="Unreconciled Credits/Payments" create="false" edit="false" delete="false">
                 <field name="aml_id"/>
                 <field name="move_name"/>
                 <field name="date"/>
@@ -18,7 +17,6 @@
         </field>
     </record>
 
-    <!-- Inherit wizard form: reorder invoice list and insert notebook before footer -->
     <record id="view_batch_payment_allocation_wizard_form_inherit_reorder_and_payments" model="ir.ui.view">
         <field name="name">batch.payment.allocation.wizard.form.inherit.reorder.payments</field>
         <field name="model">batch.payment.allocation.wizard</field>
@@ -41,7 +39,7 @@
                 <notebook>
                     <page string="Unreconciled Credits/Payments">
                         <group>
-                            <field name="unreconciled_payment_line_ids" mode="list"/>
+                            <field name="unreconciled_payment_line_ids" mode="list" readonly="1" options="{'no_create': True, 'no_create_edit': True, 'no_open': True}"/>
                         </group>
                         <group>
                             <button name="action_apply_selected_payments"
