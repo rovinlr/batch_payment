@@ -41,7 +41,7 @@
                 <notebook>
                     <page string="Unreconciled Payments">
                         <group>
-                            <field name="unreconciled_payment_line_ids" context="{'default_wizard_id': active_id}" mode="list">
+                            <field name="unreconciled_payment_line_ids" mode="list">
                                 <!-- No inline tree; Odoo will use the dedicated tree view above -->
                             </field>
                         </group>
