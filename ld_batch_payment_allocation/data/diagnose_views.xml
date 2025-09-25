@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!-- Server action: find wizard views that wrongly reference the new One2many field in the base view -->
+    <record id="server_action_diagnose_unreconciled_in_wizard_views" model="ir.actions.server">
+        <field name="name">Diagnose: unreconciled_payment_line_ids in Wizard Views</field>
+        <field name="state">code</field>
+        <field name="code"><![CDATA[
+wizard_model = 'batch.payment.allocation.wizard'
+field_name = 'unreconciled_payment_line_ids'
+View = env['ir.ui.view']
+
+# All views of the wizard model
+views = View.search([('model','=', wizard_model)])
+
+# Offenders: views that contain the field in their arch
+offenders = views.filtered(lambda v: (v.arch_db or '').find(field_name) >= 0)
+
+# Open result list
+action = {
+    'type': 'ir.actions.act_window',
+    'name': 'Views referencing %s' % field_name,
+    'res_model': 'ir.ui.view',
+    'view_mode': 'tree,form',
+    'domain': [('id','in', offenders.ids)],
+}
+        ]]></field>
+    </record>
+
+    <!-- Server action: find ANY view that references the field (regardless of model) -->
+    <record id="server_action_diagnose_unreconciled_in_any_view" model="ir.actions.server">
+        <field name="name">Diagnose: unreconciled_payment_line_ids in ANY View</field>
+        <field name="state">code</field>
+        <field name="code"><![CDATA[
+field_name = 'unreconciled_payment_line_ids'
+View = env['ir.ui.view']
+offenders = View.search([('arch_db','ilike', field_name)])
+action = {
+    'type': 'ir.actions.act_window',
+    'name': 'Views referencing %s (ANY model)' % field_name,
+    'res_model': 'ir.ui.view',
+    'view_mode': 'tree,form',
+    'domain': [('id','in', offenders.ids)],
+}
+        ]]></field>
+    </record>
+</odoo>
