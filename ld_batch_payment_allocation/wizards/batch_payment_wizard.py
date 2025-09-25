@@ -5,7 +5,7 @@ from odoo.exceptions import UserError, ValidationError
 
 class BatchPaymentAllocationWizard(models.TransientModel):
     _name = "batch.payment.allocation.wizard"
-    _description =
+    _description = 'Batch Payment Allocation'
     journal_id = fields.Many2one('account.journal', string='Journal')
     payment_currency_id = fields.Many2one('res.currency', string='Payment Currency', required=True, default=lambda self: self.env.company.currency_id)
     company_currency_id = fields.Many2one('res.currency', related='company_id.currency_id', string='Company Currency', readonly=True, store=False)
@@ -157,8 +157,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         for w in self:
             w.payment_currency_id = w.journal_id.currency_id or w.company_id.currency_id
 
-    total_to_pay = fields.Monetary(string='Total to pay', currency_field='payment_currency_id', compute='_compute_totals', store=False)
-class BatchPaymentAllocationWizardLine(models.TransientModel):
+    total_to_pay = fields.Monetary(string='Total to pay', currency_field='payment_currency_id', compute='_compute_totals', store=False)class BatchPaymentAllocationWizardLine(models.TransientModel):
     _name = "batch.payment.allocation.wizard.line"
     _description = "Batch Payment Allocation Line"
 
