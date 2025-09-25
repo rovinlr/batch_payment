@@ -9,7 +9,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
     journal_id = fields.Many2one('account.journal', string='Journal')
     payment_currency_id = fields.Many2one('res.currency', string='Payment Currency', required=True, default=lambda self: self.env.company.currency_id)
     company_currency_id = fields.Many2one('res.currency', related='company_id.currency_id', string='Company Currency', readonly=True, store=False)
-    company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company) 'Batch Payment Allocation'
+    company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
 
     partner_type = fields.Selection([("customer","Customer"),("supplier","Vendor")], required=True, default="supplier")
     partner_id = fields.Many2one("res.partner", string="Partner", required=True, domain="[('parent_id','=',False)]")
