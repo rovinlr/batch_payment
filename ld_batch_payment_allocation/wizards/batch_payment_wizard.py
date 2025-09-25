@@ -83,9 +83,9 @@ class BatchPaymentAllocationWizard(models.TransientModel):
         for mv in moves:
             # Use receivable/payable lines to compute residuals
             rec_lines = mv.line_ids.filtered(lambda l: l.account_id and l.account_id.account_type in ('asset_receivable','liability_payable'))
-            residual_company = abs(sum(rec_lines.mapped('amount_residual')))
-            residual_invoice = abs(sum(rec_lines.mapped('amount_residual_currency'))) if mv.currency_id else residual_company
-            if residual_company <= 0 and residual_invoice <= 0:
+            residual_company = sum(rec_lines.mapped('amount_residual'))
+            residual_invoice = sum(rec_lines.mapped('amount_residual_currency')) if mv.currency_id else residual_company
+            if residual_company == 0 and residual_invoice == 0:
                 continue
             residual_pay_cur = self._convert_amount(residual_company, self.payment_date)
             lines.append((0, 0, {
@@ -137,10 +137,10 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             # Compute residual in payment currency
             if invoice_currency and invoice_currency == pay_currency:
                 # Perfect: use residual in invoice currency directly to avoid FX drift
-                residual_paycur = abs(sum(rec_lines.mapped('amount_residual_currency')))
+                residual_paycur = sum(rec_lines.mapped('amount_residual_currency'))
             else:
                 # Convert company residual to payment currency at the payment date
-                residual_company = abs(sum(rec_lines.mapped('amount_residual')))
+                residual_company = sum(rec_lines.mapped('amount_residual'))
                 residual_paycur = company_currency._convert(residual_company, pay_currency, self.company_id, date)
 
             amt_paycur = amt_in_pay_currency or 0.0
@@ -261,8 +261,8 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
             rec.invoice_date = rec.move_id.invoice_date
             if rec.move_id:
                 rec_lines = rec.move_id.line_ids.filtered(lambda l: l.account_id and l.account_id.account_type in ('asset_receivable','liability_payable'))
-                residual_company = abs(sum(rec_lines.mapped('amount_residual')))
-                residual_invoice = abs(sum(rec_lines.mapped('amount_residual_currency'))) if rec.move_id.currency_id else residual_company
+                residual_company = sum(rec_lines.mapped('amount_residual'))
+                residual_invoice = sum(rec_lines.mapped('amount_residual_currency')) if rec.move_id.currency_id else residual_company
                 rec.residual_in_company_currency = residual_company
                 rec.residual_in_invoice_currency = residual_invoice
                 rec.residual_in_payment_currency = rec.wizard_id._convert_amount(residual_company, rec.wizard_id.payment_date)
