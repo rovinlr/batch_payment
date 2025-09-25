@@ -5,9 +5,7 @@
         <field name="name">Diagnose: unreconciled_payment_line_ids in Wizard Views</field>
         <field name="state">code</field>
         <field name="model_id" ref="base.model_ir_ui_view"/>
-        <field name="code"><![CDATA[
-<![CDATA[
-wizard_model = 'batch.payment.allocation.wizard'
+        <field name="code">wizard_model = 'batch.payment.allocation.wizard'
 field_name = 'unreconciled_payment_line_ids'
 View = env['ir.ui.view']
 
@@ -15,7 +13,7 @@ View = env['ir.ui.view']
 views = View.search([('model','=', wizard_model)])
 
 # Offenders: views that contain the field in their arch
-offenders = views.filtered(lambda v: (v.arch_db or '').find(field_name) >= 0)
+offenders = views.filtered(lambda v: (v.arch_db or '').find(field_name) &gt;= 0)
 
 # Open result list
 action = {
@@ -25,8 +23,7 @@ action = {
     'view_mode': 'tree,form',
     'domain': [('id','in', offenders.ids)],
 }
-        ]]>
-]]></field>
+</field>
     </record>
 
     <!-- Server action: find ANY view that references the field (regardless of model) -->
@@ -34,9 +31,7 @@ action = {
         <field name="name">Diagnose: unreconciled_payment_line_ids in ANY View</field>
         <field name="state">code</field>
         <field name="model_id" ref="base.model_ir_ui_view"/>
-        <field name="code"><![CDATA[
-<![CDATA[
-field_name = 'unreconciled_payment_line_ids'
+        <field name="code">field_name = 'unreconciled_payment_line_ids'
 View = env['ir.ui.view']
 offenders = View.search([('arch_db','ilike', field_name)])
 action = {
@@ -46,7 +41,6 @@ action = {
     'view_mode': 'tree,form',
     'domain': [('id','in', offenders.ids)],
 }
-        ]]>
-]]></field>
+</field>
     </record>
 </odoo>
