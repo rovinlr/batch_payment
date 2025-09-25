@@ -51,7 +51,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             if not wiz.unreconciled_payment_line_ids:
                 continue
             inv_lines = wiz.line_ids.sorted(key=lambda l: (l.invoice_date or l.move_id.invoice_date or False, l.name or ""))
-            for pay_line in wiz.unreconciled_payment_line_ids.filtered(lambda r: r.select and r.payment_id.state == 'posted'):
+            for pay_line in wiz.unreconciled_payment_line_ids.filtered(lambda r: r.payment_id.state == 'posted'):
                 aml_candidates = pay_line.payment_id.move_id.line_ids.filtered(
                     lambda l: l.account_id.account_type in ('asset_receivable','liability_payable') and not l.reconciled and l.partner_id.commercial_partner_id == wiz.partner_id.commercial_partner_id
                 )
@@ -90,7 +90,6 @@ class BatchPaymentUnreconciledLine(models.TransientModel):
     amount_total = fields.Monetary(string="Original Amount", currency_field="currency_id", readonly=True)
     available_company = fields.Monetary(string="Available (Company)", currency_field="company_currency_id", compute="_compute_available", store=False, readonly=True)
     available_payment_currency = fields.Monetary(string="Available (Payment)", currency_field="currency_id", compute="_compute_available", store=False, readonly=True)
-    select = fields.Boolean(string="Apply", default=True, help="Select to apply this payment against the listed invoices.")
 
     @api.depends("payment_id")
     def _compute_available(self):

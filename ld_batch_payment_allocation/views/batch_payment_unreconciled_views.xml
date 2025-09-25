@@ -23,7 +23,6 @@
                 <group>
                     <field name="unreconciled_payment_line_ids" context="{'default_wizard_id': active_id}">
                         <tree editable="bottom" string="Unreconciled Payments">
-                            <field name="select"/>
                             <field name="payment_id"/>
                             <field name="payment_date"/>
                             <field name="journal_id"/>
