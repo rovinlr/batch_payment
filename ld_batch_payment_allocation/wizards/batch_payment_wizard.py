@@ -4,6 +4,7 @@ from odoo.exceptions import ValidationError
 from odoo.exceptions import UserError, ValidationError
 
 class BatchPaymentAllocationWizard(models.TransientModel):
+
     _name = "batch.payment.allocation.wizard"
     _description = 'Batch Payment Allocation'
     journal_id = fields.Many2one('account.journal', string='Journal')
@@ -158,8 +159,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             w.payment_currency_id = w.journal_id.currency_id or w.company_id.currency_id
 
     total_to_pay = fields.Monetary(string='Total to pay', currency_field='payment_currency_id', compute='_compute_totals', store=False)
-
 class BatchPaymentAllocationWizardLine(models.TransientModel):
+
     _name = "batch.payment.allocation.wizard.line"
     _description = "Batch Payment Allocation Line"
 
@@ -170,8 +171,8 @@ class BatchPaymentAllocationWizardLine(models.TransientModel):
     residual_in_payment_currency = fields.Monetary(string="Residual (Payment Currency)", currency_field="currency_id", readonly=True)
     amount_to_pay = fields.Monetary(string="Amount to Pay", currency_field="currency_id")
     currency_id = fields.Many2one("res.currency", string="Currency", required=True, readonly=True)
-        invoice_currency_id = fields.Many2one('res.currency', string='Invoice Currency', related='move_id.currency_id', readonly=True)
-        invoice_amount_total = fields.Monetary(string='Invoice Total', related='move_id.amount_total', currency_field='invoice_currency_id', readonly=True)
+    invoice_currency_id = fields.Many2one('res.currency', string='Invoice Currency', related='move_id.currency_id', readonly=True)
+    invoice_amount_total = fields.Monetary(string='Invoice Total', related='move_id.amount_total', currency_field='invoice_currency_id', readonly=True)
 
     @api.constrains("amount_to_pay")
     def _check_amount(self):
