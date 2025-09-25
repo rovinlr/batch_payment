@@ -2,7 +2,7 @@
 {
     "name": "LD Batch Payment Allocation",
     "summary": "Allocate a payment across multiple invoices with per-line amounts.",
-    "version": "19.0.14",
+    "version": "19.0.21",
     "category": "Accounting/Accounting",
     "author": "FenixCR Solutions",
     "license": "LGPL-3",

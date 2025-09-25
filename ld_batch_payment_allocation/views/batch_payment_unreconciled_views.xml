@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Dedicated tree view for the One2many comodel -->
-    <record id="view_unreconciled_payment_line_tree" model="ir.ui.view">
-        <field name="name">batch.payment.unreconciled.line.tree</field>
+    <!-- Dedicated list view for the One2many comodel -->
+    <record id="view_unreconciled_payment_line_list" model="ir.ui.view">
+        <field name="name">batch.payment.unreconciled.line.list</field>
         <field name="model">batch.payment.unreconciled.line</field>
         <field name="arch" type="xml">
             <list string="Unreconciled Credits/Payments">
@@ -16,10 +16,9 @@
                 <field name="company_currency_id" invisible="1"/>
             </list>
         </field>
-        </field>
     </record>
 
-    <!-- Inherit wizard form: reorder invoice list and insert payments block -->
+    <!-- Inherit wizard form: reorder invoice list and insert notebook before footer -->
     <record id="view_batch_payment_allocation_wizard_form_inherit_reorder_and_payments" model="ir.ui.view">
         <field name="name">batch.payment.allocation.wizard.form.inherit.reorder.payments</field>
         <field name="model">batch.payment.allocation.wizard</field>
@@ -38,21 +37,18 @@
                 </list>
             </xpath>
 
-            <!-- Put payments into a Notebook page to ensure proper context -->
-            <xpath expr="//form" position="inside">
+            <xpath expr="//footer" position="before">
                 <notebook>
-                    <page string="Unreconciled Payments">
+                    <page string="Unreconciled Credits/Payments">
                         <group>
-                            <field name="unreconciled_payment_line_ids" mode="list">
-                                <!-- No inline tree; Odoo will use the dedicated tree view above -->
-                            </field>
+                            <field name="unreconciled_payment_line_ids" mode="list"/>
                         </group>
-                        <footer>
+                        <group>
                             <button name="action_apply_selected_payments"
-                                    string="Apply Payments"
+                                    string="Apply Credits/Payments"
                                     type="object"
                                     class="btn-primary"/>
-                        </footer>
+                        </group>
                     </page>
                 </notebook>
             </xpath>

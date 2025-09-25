@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 from odoo import api, fields, models, _
 
@@ -17,14 +16,12 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             wiz.unreconciled_payment_line_ids = [(5, 0, 0)]
             if not wiz.partner_id or not wiz.company_id:
                 continue
-            # Outstanding AR/AP lines not reconciled for this commercial partner
             aml_domain = [
                 ("partner_id.commercial_partner_id", "=", wiz.partner_id.commercial_partner_id.id),
                 ("company_id", "=", wiz.company_id.id),
                 ("account_id.account_type", "in", ("asset_receivable", "liability_payable")),
                 ("reconciled", "=", False),
             ]
-            # Exclude the invoice lines currently displayed in the wizard to avoid self-assignment
             invoice_moves = wiz.line_ids.mapped("move_id").ids
             if invoice_moves:
                 aml_domain.append(("move_id", "not in", invoice_moves))
@@ -32,10 +29,8 @@ class BatchPaymentAllocationWizard(models.TransientModel):
             aml_records = self.env["account.move.line"].search(aml_domain, order="date asc, id asc")
             lines_vals = []
             for aml in aml_records:
-                # Only consider lines with credit available in company currency (negative balance for AR, positive for AP may vary).
-                # We rely on amount_residual sign-agnostic using abs().
                 residual_company = abs(aml.amount_residual)
-                if self.env.company.currency_id.is_zero(residual_company):
+                if wiz.company_id.currency_id.is_zero(residual_company):
                     continue
                 vals = {
                     "aml_id": aml.id,
@@ -43,7 +38,7 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                     "move_name": aml.move_id.name or aml.move_id.ref,
                     "journal_id": aml.move_id.journal_id.id,
                     "partner_id": aml.partner_id.id,
-                    "company_currency_id": aml.company_currency_id.id if hasattr(aml, "company_currency_id") else aml.company_id.currency_id.id,
+                    "company_currency_id": aml.company_id.currency_id.id,
                     "currency_id": aml.currency_id.id or aml.company_id.currency_id.id,
                 }
                 lines_vals.append((0, 0, vals))
@@ -51,7 +46,6 @@ class BatchPaymentAllocationWizard(models.TransientModel):
                 wiz.unreconciled_payment_line_ids = lines_vals
 
     def action_apply_selected_payments(self):
-        """Apply all outstanding lines to invoices (oldest first)."""
         for wiz in self:
             inv_lines = wiz.line_ids.sorted(key=lambda l: (l.invoice_date or l.move_id.invoice_date or False, l.name or ""))
             for credit_line in wiz.unreconciled_payment_line_ids:
