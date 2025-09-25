@@ -1,5 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- Dedicated tree view for the One2many comodel -->
+    <record id="view_unreconciled_payment_line_tree" model="ir.ui.view">
+        <field name="name">batch.payment.unreconciled.line.tree</field>
+        <field name="model">batch.payment.unreconciled.line</field>
+        <field name="arch" type="xml">
+            <tree string="Unreconciled Payments">
+                <field name="payment_id"/>
+                <field name="payment_date"/>
+                <field name="journal_id"/>
+                <field name="available_payment_currency"/>
+                <field name="available_company"/>
+                <field name="currency_id" invisible="1"/>
+                <field name="company_currency_id" invisible="1"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Inherit wizard form: reorder invoice list and insert payments block -->
     <record id="view_batch_payment_allocation_wizard_form_inherit_reorder_and_payments" model="ir.ui.view">
         <field name="name">batch.payment.allocation.wizard.form.inherit.reorder.payments</field>
         <field name="model">batch.payment.allocation.wizard</field>
@@ -18,27 +36,23 @@
                 </list>
             </xpath>
 
+            <!-- Put payments into a Notebook page to ensure proper context -->
             <xpath expr="//form" position="inside">
-                <separator string="Unreconciled Payments"/>
-                <group>
-                    <field name="unreconciled_payment_line_ids" context="{'default_wizard_id': active_id}">
-                        <tree editable="bottom" string="Unreconciled Payments">
-                            <field name="payment_id"/>
-                            <field name="payment_date"/>
-                            <field name="journal_id"/>
-                            <field name="available_payment_currency"/>
-                            <field name="available_company"/>
-                            <field name="currency_id" invisible="1"/>
-                            <field name="company_currency_id" invisible="1"/>
-                        </tree>
-                    </field>
-                </group>
-                <footer position="inside">
-                    <button name="action_apply_selected_payments"
-                            string="Apply Selected Payments"
-                            type="object"
-                            class="btn-primary"/>
-                </footer>
+                <notebook>
+                    <page string="Unreconciled Payments">
+                        <group>
+                            <field name="unreconciled_payment_line_ids" context="{'default_wizard_id': active_id}" mode="tree">
+                                <!-- No inline tree; Odoo will use the dedicated tree view above -->
+                            </field>
+                        </group>
+                        <footer>
+                            <button name="action_apply_selected_payments"
+                                    string="Apply Payments"
+                                    type="object"
+                                    class="btn-primary"/>
+                        </footer>
+                    </page>
+                </notebook>
             </xpath>
         </field>
     </record>
