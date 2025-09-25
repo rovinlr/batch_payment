@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 {
-    "name": "LD Batch Payment Allocation",
-    "summary": "Allocate a payment across multiple invoices with per-line amounts.",
-    "version": "19.0.8.4",
+    "name": "Batch Payment Allocation (One Payment, Many Invoices)",
+    "summary": "Create a single payment and allocate it to multiple invoices with editable per-invoice amounts (QuickBooks-style).",
+    "version": "19.0.1.0.0",
     "category": "Accounting/Accounting",
     "author": "FenixCR Solutions",
+    "maintainers": ["ld-consulting"],
+    "website": "https://www.fenixcrsolutions.com",
     "license": "LGPL-3",
     "depends": ["account"],
     "data": [
@@ -12,6 +14,7 @@
         "views/menu.xml",
         "views/batch_payment_wizard_views.xml"
     ],
+    "assets": {},
     "application": False,
-    "installable": True
+    "installable": True,
 }

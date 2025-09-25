@@ -8,10 +8,5 @@
         <field name="target">new</field>
         <field name="context">{}</field>
     </record>
-
-    <menuitem id="menu_ld_batch_pay_entries"
-              name="Pagos por Lotes"
-              parent="account.menu_finance_entries"
-              sequence="32"
-              action="action_open_batch_payment_allocation_wizard"/>
+    <menuitem id="menu_ld_batch_pay_root" name="Batch Payment Allocation" parent="account.menu_finance" sequence="96" action="action_open_batch_payment_allocation_wizard"/>
 </odoo>
